@@ -26,7 +26,7 @@ def main():
     result = filter_excel_rows("dataset.xlsx", config.get("tip_values"))
 
     if result is not None:
-        print(f"Found {len(result)} rows with '1=' in the tip column")
+        print(f"Found {len(result)} rows")
         print(result)
 
 
