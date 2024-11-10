@@ -1,3 +1,4 @@
 {
+    "path": "./test_dataset", 
     "tip_values": [2, 3, 4, 5, 6, 7, 8]
 }

@@ -23,7 +23,9 @@ def load_config():
 
 def main():
     config = load_config()
-    result = filter_excel_rows("dataset.xlsx", config.get("tip_values"))
+    result = filter_excel_rows(
+        f"{config.get("path")}/metadata.xlsx", config.get("tip_values")
+    )
 
     if result is not None:
         print(f"Found {len(result)} rows")
