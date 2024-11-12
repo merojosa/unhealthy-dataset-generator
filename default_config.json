@@ -1,4 +1,30 @@
 {
-    "path": "./test_dataset", 
-    "tip_values": [2, 3, 4, 5, 6, 7, 8]
+    "path": "./test_dataset",
+    "tip_values": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+    ],
+    "tv_channels_mapping": {
+        "1": {
+            "directory": "Disney Channel",
+            "filename": "DN"
+        },
+        "2": {
+            "directory": "Cartoon Network",
+            "filename": "CN"
+        },
+        "3": {
+            "directory": "Canal 6",
+            "filename": "canal_6"
+        },
+        "4": {
+            "directory": "Canal 7",
+            "filename": "canal_7"
+        }
+    }
 }

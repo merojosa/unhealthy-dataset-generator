@@ -63,11 +63,7 @@ def load_config():
 
 
 def main():
-    result = generate_dataset(load_config())
-
-    if result is not None:
-        print(f"Found {len(result)} rows")
-        print(result)
+    generate_dataset(load_config())
 
 
 if __name__ == "__main__":
