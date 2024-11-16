@@ -21,5 +21,6 @@ def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
         for tip_number in tip_values:
             if ad_type.startswith(f"{tip_number}="):  # Filter by tip_values
                 process_row(row, config)
+                # Save images in their respective directory following this guideline: https://docs.ultralytics.com/datasets/classify/
 
     return ads_dataframe
