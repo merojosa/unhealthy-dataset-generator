@@ -5,6 +5,7 @@ from datetime import datetime, time
 import os
 import cv2
 from src.time_calculator import get_times
+import shutil
 
 
 def process_row(row: pd.Series, config: Any):
@@ -27,13 +28,14 @@ def process_row(row: pd.Series, config: Any):
 
     if not isinstance(start_time, time) and not isinstance(end_time, time):
         print(
-            f"Row error: start time or end time are not datetime. cid={row["cod"]}, start_time={start_time}, end_time={end_time}"
+            f"Row error: start time/end time are not datetime. cid={row["cod"]}, start_time={start_time}, end_time={end_time}"
         )
         return None
 
-    # Extract images based on start time and end time (one frame per second?)
+    result_path = f"{config.get("path")}/result"
     times = get_times(start_time, end_time)
-    extract_frames(file_path, "result", times[0], times[1])
+    shutil.rmtree(result_path)
+    extract_frames(file_path, result_path, times[0], times[1])
 
 
 def get_channel_info(tv_channel: str, config: Any) -> str | None:
