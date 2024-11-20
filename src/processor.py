@@ -1,7 +1,39 @@
+import math
 import pandas as pd
 from typing import Any
-from datetime import datetime
+from datetime import datetime, time
 import os
+import cv2
+from src.time_calculator import get_times
+
+
+def process_row(row: pd.Series, config: Any):
+    date = row["fec"]
+    tv_channel = row["can"]
+    start_time = row["hin"]
+    end_time = row["hfi"]
+
+    # Check if video exists
+    tv_channel_info = get_channel_info(tv_channel, config)
+    date_filename = get_date_filename(date)
+    if tv_channel_info is None or date_filename is None:
+        print(f"Row error: incorrect tv channel or date. cid={row["cod"]}")
+        return None
+
+    file_path = f"{config.get("path")}/videos/{tv_channel_info.get("directory")}/{date_filename}_{tv_channel_info.get("filename")}.mp4"
+    if not os.path.isfile(file_path):
+        print(f"Row error: file doesn't exist. cid={row["cod"]}, file_path={file_path}")
+        return None
+
+    if not isinstance(start_time, time) and not isinstance(end_time, time):
+        print(
+            f"Row error: start time or end time are not datetime. cid={row["cod"]}, start_time={start_time}, end_time={end_time}"
+        )
+        return None
+
+    # Extract images based on start time and end time (one frame per second?)
+    times = get_times(start_time, end_time)
+    extract_frames(file_path, "result", times[0], times[1])
 
 
 def get_channel_info(tv_channel: str, config: Any) -> str | None:
@@ -40,22 +72,29 @@ def get_date_filename(date_row):
     return None
 
 
-def process_row(row: pd.Series, config: Any):
-    date = row["fec"]
-    tv_channel = row["can"]
-    start_time = row["hin"]
-    end_time = row["hfi"]
+def extract_frames(video_path, output_dir, start_time_seconds, end_time_seconds):
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Check if video exists
-    tv_channel_info = get_channel_info(tv_channel, config)
-    date_filename = get_date_filename(date)
-    if tv_channel_info is None or date_filename is None:
-        print(f"Row error: incorrect tv channel or date. cid={row["cod"]}")
-        return None
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    filename = f"{tv_channel_info.get("directory")}/{date_filename}_{tv_channel_info.get("filename")}.mp4"
-    if not os.path.isfile(f"{config.get("path")}/videos/{filename}"):
-        print(f"Row error: file doesn't exist. cid={row["cod"]}, filename={filename}")
-        return None
+    start_frame = int(start_time_seconds * fps)
+    end_frame = min(
+        int((end_time_seconds + 1) * fps), total_frames
+    )  # + 1 to include the final frame
 
-    # Extract images based on start time and end time (one frame per second?)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    frame_count = start_frame
+
+    while frame_count < end_frame:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        filename = f"frame_{math.floor(frame_count)}.jpg"
+        cv2.imwrite(f"{output_dir}/{filename}", frame)
+        frame_count += fps
+
+    cap.release()

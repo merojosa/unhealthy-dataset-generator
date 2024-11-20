@@ -3,3 +3,5 @@
 *.xlsx
 config.json
 __pycache__
+*.mp4
+*.jpg
