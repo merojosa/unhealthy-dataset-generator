@@ -5,7 +5,6 @@ from datetime import datetime, time
 import os
 import cv2
 from src.time_calculator import get_times
-import shutil
 
 
 def process_row(row: pd.Series, config: Any):
@@ -32,9 +31,8 @@ def process_row(row: pd.Series, config: Any):
         )
         return None
 
-    result_path = f"{config.get("path")}/result"
+    result_path = f"{config.get("path")}/result/ad"
     times = get_times(start_time, end_time)
-    shutil.rmtree(result_path)
     extract_frames(file_path, result_path, times[0], times[1])
 
 

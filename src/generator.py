@@ -1,6 +1,8 @@
 import pandas as pd
 from typing import Optional, Any
 from src.processor import process_row
+import os
+import shutil
 
 
 def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
@@ -15,12 +17,15 @@ def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
         print(f"Error processing file: {str(e)}")
         return None
 
+    result_path = f"{config.get("path")}/result"
+    if os.path.exists(result_path):
+        shutil.rmtree(result_path)
+
     tip_values = config.get("tip_values")
     for _, row in ads_dataframe.iterrows():
         ad_type = row["tip"]
         for tip_number in tip_values:
             if ad_type.startswith(f"{tip_number}="):  # Filter by tip_values
                 process_row(row, config)
-                # Save images in their respective directory following this guideline: https://docs.ultralytics.com/datasets/classify/
 
     return ads_dataframe
