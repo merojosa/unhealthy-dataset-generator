@@ -20,7 +20,8 @@ def process_row(row: pd.Series, config: Any):
         print(f"Row error: incorrect tv channel or date. cod={row["cod"]}")
         return None
 
-    file_path = f"{config.get("path")}/videos/{date_filename}_{tv_channel_filename}.mp4"
+    filename = f"{date_filename}_{tv_channel_filename}.mp4"
+    file_path = f"{config.get("path")}/videos/{filename}"
     if not os.path.isfile(file_path):
         print(f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
         return None
@@ -31,8 +32,22 @@ def process_row(row: pd.Series, config: Any):
         )
         return None
 
+    video_start_time = None
+    try:
+        video_start_time = datetime.strptime(
+            config.get("videos_start_times").get(filename), "%H:%M:%S"
+        ).time()
+    except:
+        print(f"Incorrect video start time. filename={filename}")
+        return None
+
+    times = get_times(
+        video_start_time,
+        start_time,
+        end_time,
+    )
+
     result_path = f"{config.get("path")}/result/ad"
-    times = get_times(start_time, end_time)
     extract_frames(file_path, result_path, times[0], times[1])
 
 
@@ -75,21 +90,21 @@ def get_date_filename(date_row):
 def extract_frames(video_path, output_dir, start_time_seconds, end_time_seconds):
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    video_capture = cv2.VideoCapture(video_path)
+    fps = video_capture.get(cv2.CAP_PROP_FPS)
+    total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     start_frame = int(start_time_seconds * fps)
     end_frame = min(
         int((end_time_seconds + 1) * fps), total_frames
     )  # + 1 to include the final frame
 
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
 
-    while frame_count < end_frame:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
-        ret, frame = cap.read()
+    while frame_count <= end_frame:
+        video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
+        ret, frame = video_capture.read()
         if not ret:
             break
 
@@ -97,4 +112,4 @@ def extract_frames(video_path, output_dir, start_time_seconds, end_time_seconds)
         cv2.imwrite(f"{output_dir}/{filename}", frame)
         frame_count += fps
 
-    cap.release()
+    video_capture.release()
