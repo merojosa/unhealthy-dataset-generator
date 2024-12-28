@@ -10,21 +10,9 @@
         8
     ],
     "tv_channels_mapping": {
-        "1": {
-            "directory": "Disney Channel",
-            "filename": "DN"
-        },
-        "2": {
-            "directory": "Cartoon Network",
-            "filename": "CN"
-        },
-        "3": {
-            "directory": "Canal 6",
-            "filename": "canal_6"
-        },
-        "4": {
-            "directory": "Canal 7",
-            "filename": "canal_7"
-        }
+        "1": "DN",
+        "2": "CN",
+        "3": "canal_6",
+        "4": "canal_7"
     }
 }

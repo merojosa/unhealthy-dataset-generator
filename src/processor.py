@@ -14,13 +14,13 @@ def process_row(row: pd.Series, config: Any):
     end_time = row["hfi"]
 
     # Check if video exists
-    tv_channel_info = get_channel_info(tv_channel, config)
+    tv_channel_filename = get_channel_filename(tv_channel, config)
     date_filename = get_date_filename(date)
-    if tv_channel_info is None or date_filename is None:
+    if tv_channel_filename is None or date_filename is None:
         print(f"Row error: incorrect tv channel or date. cod={row["cod"]}")
         return None
 
-    file_path = f"{config.get("path")}/videos/{tv_channel_info.get("directory")}/{date_filename}_{tv_channel_info.get("filename")}.mp4"
+    file_path = f"{config.get("path")}/videos/{date_filename}_{tv_channel_filename}.mp4"
     if not os.path.isfile(file_path):
         print(f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
         return None
@@ -36,14 +36,14 @@ def process_row(row: pd.Series, config: Any):
     extract_frames(file_path, result_path, times[0], times[1])
 
 
-def get_channel_info(tv_channel: str, config: Any) -> str | None:
+def get_channel_filename(tv_channel: str, config: Any) -> str | None:
     if len(tv_channel) < 1:
         return None
 
-    data = config.get("tv_channels_mapping").get(tv_channel.strip()[0])
+    filename = config.get("tv_channels_mapping").get(tv_channel.strip()[0])
 
-    if data is not None:
-        return data
+    if filename is not None:
+        return filename
 
     return None
 
