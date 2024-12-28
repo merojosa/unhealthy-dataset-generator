@@ -17,17 +17,17 @@ def process_row(row: pd.Series, config: Any):
     tv_channel_info = get_channel_info(tv_channel, config)
     date_filename = get_date_filename(date)
     if tv_channel_info is None or date_filename is None:
-        print(f"Row error: incorrect tv channel or date. cid={row["cod"]}")
+        print(f"Row error: incorrect tv channel or date. cod={row["cod"]}")
         return None
 
     file_path = f"{config.get("path")}/videos/{tv_channel_info.get("directory")}/{date_filename}_{tv_channel_info.get("filename")}.mp4"
     if not os.path.isfile(file_path):
-        print(f"Row error: file doesn't exist. cid={row["cod"]}, file_path={file_path}")
+        print(f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
         return None
 
     if not isinstance(start_time, time) and not isinstance(end_time, time):
         print(
-            f"Row error: start time/end time are not datetime. cid={row["cod"]}, start_time={start_time}, end_time={end_time}"
+            f"Row error: start time/end time are not datetime. cod={row["cod"]}, start_time={start_time}, end_time={end_time}"
         )
         return None
 
