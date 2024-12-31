@@ -48,7 +48,13 @@ def process_row(row: pd.Series, config: Any):
     )
 
     result_path = f"{config.get("path")}/result/ad"
-    extract_frames(file_path, result_path, times[0], times[1])
+    extract_frames(
+        video_path=file_path,
+        output_dir=result_path,
+        start_time_seconds=times[0],
+        end_time_seconds=times[1],
+        custom_name=row["cod"],
+    )
 
 
 def get_channel_filename(tv_channel: str, config: Any) -> str | None:
@@ -87,7 +93,9 @@ def get_date_filename(date_row):
     return None
 
 
-def extract_frames(video_path, output_dir, start_time_seconds, end_time_seconds):
+def extract_frames(
+    video_path, output_dir, start_time_seconds, end_time_seconds, custom_name
+):
     os.makedirs(output_dir, exist_ok=True)
 
     video_capture = cv2.VideoCapture(video_path)
@@ -102,14 +110,17 @@ def extract_frames(video_path, output_dir, start_time_seconds, end_time_seconds)
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
 
+    counter = 0
     while frame_count <= end_frame:
         video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
         ret, frame = video_capture.read()
         if not ret:
             break
 
-        filename = f"frame_{math.floor(frame_count)}.jpg"
+        filename = f"{custom_name}_{counter}.jpg"
+        counter += 1
         cv2.imwrite(f"{output_dir}/{filename}", frame)
         frame_count += fps
 
+    # This can be optmized. Open video once, and then close it after the date is done.
     video_capture.release()
