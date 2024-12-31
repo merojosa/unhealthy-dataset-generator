@@ -53,7 +53,7 @@ def process_row(row: pd.Series, config: Any):
         output_dir=result_path,
         start_time_seconds=times[0],
         end_time_seconds=times[1],
-        custom_name=row["cod"],
+        custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
     )
 
 
