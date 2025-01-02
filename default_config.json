@@ -15,8 +15,18 @@
         "3": "canal_6",
         "4": "canal_7"
     },
-    "videos_start_times": {
-        "2024-04-06_CN.mp4": "05:49:36",
-        "2024-05-15_canal_7.mp4": "06:00:11"
+    "videos_metadata": {
+        "2024-04-06_CN.mp4": {
+            "start_time": "05:49:36"
+        },
+        "2024-05-15_canal_7.mp4": {
+            "start_time": "06:00:11",
+            "crop": {
+                "top": 0,
+                "bottom": 0,
+                "left": 0,
+                "right": 270
+            }
+        }
     }
 }

@@ -39,7 +39,7 @@ def process_row(row: pd.Series, config: Any):
     video_start_time = None
     try:
         video_start_time = datetime.strptime(
-            config.get("videos_start_times").get(filename), "%H:%M:%S"
+            config.get("videos_metadata").get(filename).get("start_time"), "%H:%M:%S"
         ).time()
     except:
         print(f"Incorrect video start time. filename={filename}")
@@ -58,6 +58,7 @@ def process_row(row: pd.Series, config: Any):
         start_time_seconds=times[0],
         end_time_seconds=times[1],
         custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
+        custom_crop=config.get("videos_metadata").get(filename).get("crop"),
     )
 
 
@@ -98,7 +99,12 @@ def get_date_filename(date_row):
 
 
 def extract_frames(
-    video_path, output_dir, start_time_seconds, end_time_seconds, custom_name
+    video_path,
+    output_dir,
+    start_time_seconds,
+    end_time_seconds,
+    custom_name,
+    custom_crop,
 ):
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -121,12 +127,27 @@ def extract_frames(
 
     counter = 0
     while frame_count <= end_frame:
+        # Get image
         video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
         ret, frame = video_capture.read()
         if not ret:
             break
 
+        # Crop image
+        height, width = frame.shape[:2]
+        if custom_crop:
+            frame = frame[
+                custom_crop.get("top") : height - custom_crop.get("bottom"),
+                custom_crop.get("left") : width - custom_crop.get("right"),
+            ]
+        else:
+            # Default crop params (for the moment, not sure if the video is the same)
+            height, width = frame.shape[:2]
+            frame = frame[8 : height - 40, 13 : width - 372]
+
+        # Save image
         filename = f"{custom_name}_{counter}.jpg"
-        counter += 1
         cv2.imwrite(f"{output_dir}/{filename}", frame)
+
+        counter += 1
         frame_count += fps
