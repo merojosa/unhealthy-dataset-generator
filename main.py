@@ -1,6 +1,7 @@
 import json
 from src.generator import generate_dataset
 from typing import Any, Dict
+import time
 
 
 class ConfigValidationError(Exception):
@@ -67,4 +68,7 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    end_time = time.time()
+    print(f"Time: {end_time - start_time} seconds")

@@ -1,10 +1,14 @@
-import math
 import pandas as pd
 from typing import Any
 from datetime import datetime, time
 import os
 import cv2
 from src.time_calculator import get_times
+
+previous_video_path = ""
+video_capture = None
+fps = None
+total_frames = None
 
 
 def process_row(row: pd.Series, config: Any):
@@ -96,17 +100,22 @@ def get_date_filename(date_row):
 def extract_frames(
     video_path, output_dir, start_time_seconds, end_time_seconds, custom_name
 ):
+    global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
 
-    video_capture = cv2.VideoCapture(video_path)
-    fps = video_capture.get(cv2.CAP_PROP_FPS)
-    total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    if previous_video_path != video_path:
+        if video_capture is not None:
+            video_capture.release()
+
+        previous_video_path = video_path
+        video_capture = cv2.VideoCapture(video_path)
+        fps = video_capture.get(cv2.CAP_PROP_FPS)
+        total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     start_frame = int(start_time_seconds * fps)
     end_frame = min(
         int((end_time_seconds + 1) * fps), total_frames
     )  # + 1 to include the final frame
-
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
 
@@ -121,6 +130,3 @@ def extract_frames(
         counter += 1
         cv2.imwrite(f"{output_dir}/{filename}", frame)
         frame_count += fps
-
-    # This can be optmized. Open video once, and then close it after the date is done.
-    video_capture.release()
