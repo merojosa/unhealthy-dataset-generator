@@ -27,6 +27,15 @@
                 "left": 0,
                 "right": 270
             }
+        },
+        "2024-04-06_DN.mp4": {
+            "start_time": "05:47:43",
+            "crop": {
+                "top": 8,
+                "bottom": 40,
+                "left": 13,
+                "right": 372
+            }
         }
     }
 }
