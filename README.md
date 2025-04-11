@@ -16,7 +16,7 @@ MacOS:
 source ./unhealthy-dataset-generator-env/bin/activate
 ```
 
-- Install the dependencies: `pip install -r requirements.txt`
+- Install dependencies: `pip install -r requirements.txt`
 
 
 - Execute the script: `python main.py`
