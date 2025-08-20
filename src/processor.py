@@ -25,9 +25,10 @@ def process_row(row: pd.Series, config: Any):
         return None
 
     filename = f"{date_filename}_{tv_channel_filename}.mp4"
-    file_path = f"{config.get("path")}/videos/{filename}"
+    file_path = f"{config.get("path").get("videos")}/{filename}"
     if not os.path.isfile(file_path):
-        print(f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
+        print(
+            f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
         return None
 
     if not isinstance(start_time, time) and not isinstance(end_time, time):
@@ -38,11 +39,17 @@ def process_row(row: pd.Series, config: Any):
 
     video_start_time = None
     try:
+        if (config.get("videos_metadata").get(filename) is None):
+            raise RuntimeError(
+                f"The file doesn't have a videos_metadata entry")
+
         video_start_time = datetime.strptime(
-            config.get("videos_metadata").get(filename).get("start_time"), "%H:%M:%S"
+            config.get("videos_metadata").get(
+                filename).get("start_time"), "%H:%M:%S"
         ).time()
-    except:
-        print(f"Incorrect video start time. filename={filename}")
+    except Exception as e:
+        print(
+            f"video start time error. filename={filename} - Original error={e}")
         return None
 
     times = get_times(
@@ -51,7 +58,7 @@ def process_row(row: pd.Series, config: Any):
         end_time,
     )
 
-    result_path = f"{config.get("path")}/result/ad"
+    result_path = f"{config.get("path").get("dataset")}/result/ad"
     extract_frames(
         video_path=file_path,
         output_dir=result_path,
@@ -137,13 +144,13 @@ def extract_frames(
         height, width = frame.shape[:2]
         if custom_crop:
             frame = frame[
-                custom_crop.get("top") : height - custom_crop.get("bottom"),
-                custom_crop.get("left") : width - custom_crop.get("right"),
+                custom_crop.get("top"): height - custom_crop.get("bottom"),
+                custom_crop.get("left"): width - custom_crop.get("right"),
             ]
-        else:
+        # else:
             # Default crop params (for the moment, not sure if the video is the same)
-            height, width = frame.shape[:2]
-            frame = frame[8 : height - 40, 13 : width - 372]
+            # height, width = frame.shape[:2]
+            # frame = frame[8: height - 40, 13: width - 372]
 
         # Save image
         filename = f"{custom_name}_{counter}.jpg"
