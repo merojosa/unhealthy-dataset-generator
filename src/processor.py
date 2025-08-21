@@ -108,8 +108,8 @@ def extract_frames(
     video_path: str,
     output_dir: str,
     custom_name: str,
+    times_in_seconds: tuple[float, float],
     custom_crop,
-    time_in_seconds: tuple[float, float]
 ):
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -123,9 +123,9 @@ def extract_frames(
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    start_frame = int(time_in_seconds[0] * fps)
+    start_frame = int(times_in_seconds[0] * fps)
     end_frame = min(
-        int((time_in_seconds[1] + 1) * fps), total_frames
+        int((times_in_seconds[1] + 1) * fps), total_frames
     )  # + 1 to include the final frame
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
