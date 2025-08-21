@@ -52,7 +52,7 @@ def process_row(row: pd.Series, config: Any):
             f"video start time error. filename={filename} - Original error={e}")
         return None
 
-    times = get_times(
+    times_in_seconds = get_times(
         video_start_time,
         start_time,
         end_time,
@@ -62,10 +62,9 @@ def process_row(row: pd.Series, config: Any):
     extract_frames(
         video_path=file_path,
         output_dir=result_path,
-        start_time_seconds=times[0],
-        end_time_seconds=times[1],
         custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
         custom_crop=config.get("videos_metadata").get(filename).get("crop"),
+        times_in_seconds=times_in_seconds
     )
 
 
@@ -106,12 +105,11 @@ def get_date_filename(date_row):
 
 
 def extract_frames(
-    video_path,
-    output_dir,
-    start_time_seconds,
-    end_time_seconds,
-    custom_name,
+    video_path: str,
+    output_dir: str,
+    custom_name: str,
     custom_crop,
+    time_in_seconds: tuple[float, float]
 ):
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -125,9 +123,9 @@ def extract_frames(
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    start_frame = int(start_time_seconds * fps)
+    start_frame = int(time_in_seconds[0] * fps)
     end_frame = min(
-        int((end_time_seconds + 1) * fps), total_frames
+        int((time_in_seconds[1] + 1) * fps), total_frames
     )  # + 1 to include the final frame
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
