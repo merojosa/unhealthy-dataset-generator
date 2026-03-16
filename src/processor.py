@@ -1,9 +1,10 @@
 import pandas as pd
 from typing import Any
-from datetime import datetime, time
+from datetime import datetime, time, date
 import os
 import cv2
-from src.time_calculator import get_times
+from src.time_calculator import get_times, compute_expected_datetime
+from src.frame_verifier import find_verified_frame_position
 
 previous_video_path = ""
 video_capture = None
@@ -58,14 +59,31 @@ def process_row(row: pd.Series, config: Any):
         end_time,
     )
 
+    video_metadata = config.get("videos_metadata").get(filename)
+    video_date = get_date_from_filename(filename)
+    datetime_roi = video_metadata.get("datetime_roi", None)
+    datetime_format = video_metadata.get("datetime_format", "%d/%m/%Y %H:%M:%S")
+
     result_path = f"{config.get("path").get("dataset")}/result/ad"
     extract_frames(
         video_path=file_path,
         output_dir=result_path,
         custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
-        custom_crop=config.get("videos_metadata").get(filename).get("crop"),
-        times_in_seconds=times_in_seconds
+        custom_crop=video_metadata.get("crop"),
+        times_in_seconds=times_in_seconds,
+        video_date=video_date,
+        video_start_time=video_start_time,
+        datetime_roi=tuple(datetime_roi) if datetime_roi else None,
+        datetime_format=datetime_format,
     )
+
+
+def get_date_from_filename(filename: str) -> date | None:
+    try:
+        date_str = filename.split("_")[0]
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (ValueError, IndexError):
+        return None
 
 
 def get_channel_filename(tv_channel: str, config: Any) -> str | None:
@@ -110,6 +128,10 @@ def extract_frames(
     custom_name: str,
     times_in_seconds: tuple[float, float],
     custom_crop,
+    video_date: date = None,
+    video_start_time: time = None,
+    datetime_roi: tuple = None,
+    datetime_format: str = "%d/%m/%Y %H:%M:%S",
 ):
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -127,6 +149,26 @@ def extract_frames(
     end_frame = min(
         int((times_in_seconds[1] + 1) * fps), total_frames
     )  # + 1 to include the final frame
+
+    # Verify and correct frame position using OCR datetime
+    if video_date is not None and video_start_time is not None:
+        expected_dt = compute_expected_datetime(
+            video_date, video_start_time, times_in_seconds[0]
+        )
+        verified_start = find_verified_frame_position(
+            video_capture=video_capture,
+            expected_datetime=expected_dt,
+            initial_frame=start_frame,
+            fps=fps,
+            total_frames=total_frames,
+            roi=datetime_roi,
+            datetime_format=datetime_format,
+        )
+        if verified_start is not None and verified_start != start_frame:
+            offset = verified_start - start_frame
+            end_frame = min(end_frame + offset, total_frames)
+            start_frame = verified_start
+
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
 
