@@ -90,7 +90,9 @@ def remove_out_of_range_frames(
     Frames where OCR can't read a time are kept — we can't prove they're out of range.
     """
     pattern = os.path.join(output_dir, f"{custom_name}_*.jpg")
-    for image_path in glob.glob(pattern):
+    initial_paths = glob.glob(pattern)
+    initial_count = len(initial_paths)
+    for image_path in initial_paths:
         try:
             frame_time = extract_datetime(image_path)
         except Exception as e:
@@ -102,6 +104,16 @@ def remove_out_of_range_frames(
 
         if frame_time < ad_start_time or frame_time > ad_end_time:
             os.remove(image_path)
+
+    remaining_count = len(glob.glob(pattern))
+    removed = initial_count - remaining_count
+    if removed > 5:
+        print(
+            f"Row warning: OCR filter removed {removed} frame(s) "
+            f"(extracted={initial_count}, remaining={remaining_count}). "
+            f"Likely wrong video/metadata (start_time, hin/hfi, or channel mismatch). "
+            f"cod={cod}, custom_name={custom_name}"
+        )
 
 
 def get_channel_filename(tv_channel: str, config: Any) -> str | None:
