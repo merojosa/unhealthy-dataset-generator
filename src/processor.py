@@ -25,8 +25,8 @@ def process_row(row: pd.Series, config: Any):
         print(f"Row error: incorrect tv channel or date. cod={row["cod"]}")
         return None
 
-    filename = f"{date_filename}_{tv_channel_filename}.mp4"
-    file_path = f"{config.get("path").get("dataset")}/{config.get("path").get("videos")}/{filename}"
+    filename = f"{date_filename}_{tv_channel_filename}_processed.mp4"
+    file_path = f"{config.get("path").get("videos")}/{filename}"
     if not os.path.isfile(file_path):
         print(
             f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
