@@ -18,6 +18,11 @@ source ./unhealthy-dataset-generator-env/bin/activate
 
 - Install dependencies: `pip install -r requirements.txt`
 
+- Install the Tesseract OCR binary and make sure it's on your `PATH`. This is required by `pytesseract`, which the pipeline uses to read the timestamp overlay on each extracted frame and discard frames whose on-screen time falls outside the ad window.
+    - Windows: install from the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki). Add the install directory (e.g. `C:\Program Files\Tesseract-OCR`) to `PATH`.
+    - macOS: `brew install tesseract`
+    - Linux: `sudo apt install tesseract-ocr` (or the equivalent for your distro)
+    - Verify with `tesseract --version`.
 
 - Execute the script: `python main.py`
 

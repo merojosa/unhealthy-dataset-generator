@@ -12,7 +12,12 @@ Activate the virtualenv before any Python command:
 - Run the generator: `python main.py` (from the repo root — paths in the config are resolved relative to CWD)
 - Inspect/tune crop params for a video: `python test_custom_crop_params.py --video_path <path> --top <n> --bottom <n> --left <n> --right <n>`. This opens a window showing the cropped frame and prints a `"crop": {...}` snippet to paste into `videos_metadata.<filename>.crop` in the config.
 
-`pytesseract` requires the Tesseract OCR binary to be installed and on PATH (only exercised by `src/time_calculator.extract_datetime`).
+`pytesseract` requires the Tesseract OCR binary to be installed and on `PATH` — it is exercised on every row by the post-extraction filter in `processor.remove_out_of_range_frames` (via `time_calculator.extract_datetime`), so the pipeline will silently keep every frame if Tesseract is missing. Install notes:
+- Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki); add the install dir (e.g. `C:\Program Files\Tesseract-OCR`) to `PATH`.
+- macOS: `brew install tesseract`.
+- Linux: `sudo apt install tesseract-ocr` (or the distro equivalent).
+
+Verify with `tesseract --version`.
 
 There is no test suite, linter, or formatter configured.
 
@@ -35,7 +40,8 @@ The pipeline is a straight line: `main.py` → `src/generator.py` → `src/proce
 1. **`generator.generate_dataset`** reads `{dataset}/metadata.xlsx` (first sheet) into a DataFrame, deletes any prior `{dataset}/result/`, then iterates rows and dispatches matching ones to `process_row`.
 2. **`processor.process_row`** is where per-row business logic lives. It resolves the video filename from the row's date (`fec`) and channel (`can`), validates that file + `videos_metadata` entry exist, computes the ad's start/end offsets, and calls `extract_frames`. Row-level errors are logged and the row is skipped — one bad row never aborts the whole run.
 3. **`processor.extract_frames`** pulls one frame per second of the ad window (stepping `frame_count` by `fps`), optionally crops it, and writes `{custom_name}_{counter}.jpg`. It keeps `video_capture`, `fps`, `total_frames`, and `previous_video_path` as **module-level globals** so consecutive rows from the same video reuse the open `cv2.VideoCapture` — do not refactor this into per-call state without replacing it with an equivalent cache, or throughput will collapse on large metadata files.
-4. **`time_calculator.get_times`** just subtracts `datetime`s to get `(start_seconds, end_seconds)` offsets into the video. `extract_datetime` (OCR via pytesseract) is defined but not wired into the main pipeline.
+4. **`processor.remove_out_of_range_frames`** runs immediately after `extract_frames` for the same row. It globs the row's `{custom_name}_*.jpg` outputs, OCRs the timestamp overlay via `time_calculator.extract_datetime`, and deletes frames whose time falls outside `[hin, hfi]`. Frames where OCR returns `None` (unreadable or overlay cropped out) are kept — we can't prove they're out of range. This roughly doubles per-row runtime; if the video's `crop` strips the overlay, the filter becomes a no-op.
+5. **`time_calculator.get_times`** just subtracts `datetime`s to get `(start_seconds, end_seconds)` offsets into the video. `time_calculator.extract_datetime` OCRs the lower-right ROI of a saved frame and returns a parsed `datetime.time` (or `None`).
 
 ### Metadata schema (columns consumed from `metadata.xlsx`)
 - `tip` — ad type tag, filtered by `tip_values`

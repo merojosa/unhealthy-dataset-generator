@@ -1,9 +1,10 @@
 import pandas as pd
 from typing import Any
 from datetime import datetime, time
+import glob
 import os
 import cv2
-from src.time_calculator import get_times
+from src.time_calculator import get_times, extract_datetime
 
 previous_video_path = ""
 video_capture = None
@@ -59,13 +60,48 @@ def process_row(row: pd.Series, config: Any):
     )
 
     result_path = f"{config.get("path").get("dataset")}/result/ad"
+    custom_name = f'{filename.replace(".mp4", "")}_{row["cod"]}'
     extract_frames(
         video_path=file_path,
         output_dir=result_path,
-        custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
+        custom_name=custom_name,
         custom_crop=config.get("videos_metadata").get(filename).get("crop"),
         times_in_seconds=times_in_seconds
     )
+
+    remove_out_of_range_frames(
+        output_dir=result_path,
+        custom_name=custom_name,
+        ad_start_time=start_time,
+        ad_end_time=end_time,
+        cod=row["cod"],
+    )
+
+
+def remove_out_of_range_frames(
+    output_dir: str,
+    custom_name: str,
+    ad_start_time: time,
+    ad_end_time: time,
+    cod: Any,
+):
+    """Delete frames whose OCR'd timestamp falls outside [ad_start_time, ad_end_time].
+
+    Frames where OCR can't read a time are kept — we can't prove they're out of range.
+    """
+    pattern = os.path.join(output_dir, f"{custom_name}_*.jpg")
+    for image_path in glob.glob(pattern):
+        try:
+            frame_time = extract_datetime(image_path)
+        except Exception as e:
+            print(f"OCR error (kept frame). cod={cod}, file={image_path}, error={e}")
+            continue
+
+        if frame_time is None:
+            continue
+
+        if frame_time < ad_start_time or frame_time > ad_end_time:
+            os.remove(image_path)
 
 
 def get_channel_filename(tv_channel: str, config: Any) -> str | None:
