@@ -11,13 +11,13 @@ def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
     try:
         # Read the first sheet of the Excel file
         ads_dataframe = pd.read_excel(
-            f"{config.get("path")}/metadata.xlsx", sheet_name=0
+            f"{config.get("path").get("dataset")}/metadata.xlsx", sheet_name=0
         )
     except Exception as e:
         print(f"Error processing file: {str(e)}")
         return None
 
-    result_path = f"{config.get("path")}/result"
+    result_path = f"{config.get("path").get("dataset")}/result"
     if os.path.exists(result_path):
         shutil.rmtree(result_path)
 

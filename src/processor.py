@@ -25,9 +25,10 @@ def process_row(row: pd.Series, config: Any):
         return None
 
     filename = f"{date_filename}_{tv_channel_filename}.mp4"
-    file_path = f"{config.get("path")}/videos/{filename}"
+    file_path = f"{config.get("path").get("videos")}/{filename}"
     if not os.path.isfile(file_path):
-        print(f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
+        print(
+            f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
         return None
 
     if not isinstance(start_time, time) and not isinstance(end_time, time):
@@ -38,27 +39,32 @@ def process_row(row: pd.Series, config: Any):
 
     video_start_time = None
     try:
+        if (config.get("videos_metadata").get(filename) is None):
+            raise RuntimeError(
+                f"The file doesn't have a videos_metadata entry")
+
         video_start_time = datetime.strptime(
-            config.get("videos_metadata").get(filename).get("start_time"), "%H:%M:%S"
+            config.get("videos_metadata").get(
+                filename).get("start_time"), "%H:%M:%S"
         ).time()
-    except:
-        print(f"Incorrect video start time. filename={filename}")
+    except Exception as e:
+        print(
+            f"video start time error. filename={filename} - Original error={e}")
         return None
 
-    times = get_times(
+    times_in_seconds = get_times(
         video_start_time,
         start_time,
         end_time,
     )
 
-    result_path = f"{config.get("path")}/result/ad"
+    result_path = f"{config.get("path").get("dataset")}/result/ad"
     extract_frames(
         video_path=file_path,
         output_dir=result_path,
-        start_time_seconds=times[0],
-        end_time_seconds=times[1],
         custom_name=f'{filename.replace(".mp4", "")}_{row["cod"]}',
         custom_crop=config.get("videos_metadata").get(filename).get("crop"),
+        times_in_seconds=times_in_seconds
     )
 
 
@@ -99,11 +105,10 @@ def get_date_filename(date_row):
 
 
 def extract_frames(
-    video_path,
-    output_dir,
-    start_time_seconds,
-    end_time_seconds,
-    custom_name,
+    video_path: str,
+    output_dir: str,
+    custom_name: str,
+    times_in_seconds: tuple[float, float],
     custom_crop,
 ):
     global previous_video_path, video_capture, fps, total_frames
@@ -118,9 +123,9 @@ def extract_frames(
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    start_frame = int(start_time_seconds * fps)
+    start_frame = int(times_in_seconds[0] * fps)
     end_frame = min(
-        int((end_time_seconds + 1) * fps), total_frames
+        int((times_in_seconds[1] + 1) * fps), total_frames
     )  # + 1 to include the final frame
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_count = start_frame
@@ -137,13 +142,13 @@ def extract_frames(
         height, width = frame.shape[:2]
         if custom_crop:
             frame = frame[
-                custom_crop.get("top") : height - custom_crop.get("bottom"),
-                custom_crop.get("left") : width - custom_crop.get("right"),
+                custom_crop.get("top"): height - custom_crop.get("bottom"),
+                custom_crop.get("left"): width - custom_crop.get("right"),
             ]
-        else:
+        # else:
             # Default crop params (for the moment, not sure if the video is the same)
-            height, width = frame.shape[:2]
-            frame = frame[8 : height - 40, 13 : width - 372]
+            # height, width = frame.shape[:2]
+            # frame = frame[8: height - 40, 13: width - 372]
 
         # Save image
         filename = f"{custom_name}_{counter}.jpg"
