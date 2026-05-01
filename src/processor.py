@@ -1,7 +1,6 @@
 import pandas as pd
 from typing import Any
 from datetime import datetime, time
-import glob
 import os
 import cv2
 from src.time_calculator import get_times, extract_datetime
@@ -66,54 +65,11 @@ def process_row(row: pd.Series, config: Any):
         output_dir=result_path,
         custom_name=custom_name,
         custom_crop=config.get("videos_metadata").get(filename).get("crop"),
-        times_in_seconds=times_in_seconds
-    )
-
-    remove_out_of_range_frames(
-        output_dir=result_path,
-        custom_name=custom_name,
+        times_in_seconds=times_in_seconds,
         ad_start_time=start_time,
         ad_end_time=end_time,
         cod=row["cod"],
     )
-
-
-def remove_out_of_range_frames(
-    output_dir: str,
-    custom_name: str,
-    ad_start_time: time,
-    ad_end_time: time,
-    cod: Any,
-):
-    """Delete frames whose OCR'd timestamp falls outside [ad_start_time, ad_end_time].
-
-    Frames where OCR can't read a time are kept — we can't prove they're out of range.
-    """
-    pattern = os.path.join(output_dir, f"{custom_name}_*.jpg")
-    initial_paths = glob.glob(pattern)
-    initial_count = len(initial_paths)
-    for image_path in initial_paths:
-        try:
-            frame_time = extract_datetime(image_path)
-        except Exception as e:
-            print(f"OCR error (kept frame). cod={cod}, file={image_path}, error={e}")
-            continue
-
-        if frame_time is None:
-            continue
-
-        if frame_time < ad_start_time or frame_time > ad_end_time:
-            os.remove(image_path)
-
-    remaining_count = len(glob.glob(pattern))
-    removed = initial_count - remaining_count
-    if removed > 5:
-        print(
-            f"Row warning: OCR filter removed {removed} frame(s) "
-            f"(extracted={initial_count}, remaining={remaining_count}). "
-            f"Likely wrong video/metadata (start_time, hin/hfi, or channel mismatch). "
-            f"cod={cod}, custom_name={custom_name}"
-        )
 
 
 def get_channel_filename(tv_channel: str, config: Any) -> str | None:
@@ -158,6 +114,9 @@ def extract_frames(
     custom_name: str,
     times_in_seconds: tuple[float, float],
     custom_crop,
+    ad_start_time: time,
+    ad_end_time: time,
+    cod: Any,
 ):
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -179,6 +138,8 @@ def extract_frames(
     frame_count = start_frame
 
     counter = 0
+    extracted = 0
+    removed = 0
     while frame_count <= end_frame:
         # Get image
         video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
@@ -193,14 +154,30 @@ def extract_frames(
                 custom_crop.get("top"): height - custom_crop.get("bottom"),
                 custom_crop.get("left"): width - custom_crop.get("right"),
             ]
-        # else:
-            # Default crop params (for the moment, not sure if the video is the same)
-            # height, width = frame.shape[:2]
-            # frame = frame[8: height - 40, 13: width - 372]
 
-        # Save image
-        filename = f"{custom_name}_{counter}.jpg"
-        cv2.imwrite(f"{output_dir}/{filename}", frame)
+        # OCR the burned-in clock and skip frames whose timestamp falls
+        # outside [ad_start_time, ad_end_time]. Frames where OCR returns
+        # None (unreadable / overlay cropped out) are kept — we can't prove
+        # they're out of range.
+        try:
+            frame_time = extract_datetime(frame)
+        except Exception as e:
+            print(f"OCR error (kept frame). cod={cod}, counter={counter}, error={e}")
+            frame_time = None
+
+        extracted += 1
+        if frame_time is not None and (frame_time < ad_start_time or frame_time > ad_end_time):
+            removed += 1
+        else:
+            cv2.imwrite(f"{output_dir}/{custom_name}_{counter}.jpg", frame)
 
         counter += 1
         frame_count += fps
+
+    if removed > 5:
+        print(
+            f"Row warning: OCR filter dropped {removed} frame(s) "
+            f"(considered={extracted}, written={extracted - removed}). "
+            f"Likely wrong video/metadata (start_time, hin/hfi, or channel mismatch). "
+            f"cod={cod}, custom_name={custom_name}"
+        )

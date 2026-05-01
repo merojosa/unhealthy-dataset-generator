@@ -2,6 +2,7 @@ from datetime import time, datetime, date
 from typing import Optional
 import re
 import cv2
+import numpy as np
 import pytesseract
 
 
@@ -17,29 +18,29 @@ def get_times(video_start_time: time, ad_start_time: time, ad_end_time: time):
 
 
 _TIME_RE = re.compile(r"(\d{1,2}):(\d{2}):(\d{2})")
+# --psm 7: treat ROI as a single text line.
+# Whitelist restricts the recognizer to digits and the colon, which is both
+# faster and more accurate for a burned-in HH:MM:SS clock overlay.
+_TESS_CONFIG = "--psm 7 -c tessedit_char_whitelist=0123456789:"
 
 
 def extract_datetime(
-    image_path: str,
-    roi: tuple = None
+    frame: np.ndarray,
+    roi: tuple = None,
 ) -> Optional[time]:
-    """
-    OCR the clock overlay from a region of the image and return it as a time.
+    """OCR the clock overlay from an in-memory BGR frame and return it as a time.
 
     Parameters:
-    - image_path: Path to the image file.
+    - frame: BGR image as returned by cv2.VideoCapture.read / cv2.imread.
     - roi: Region of interest as (x0, y0, x1, y1) ratios. Defaults to the
       lower-right corner where the timestamp overlay is burned in.
 
-    Returns the parsed time, or None if the image can't be read or no
-    HH:MM:SS pattern is found.
+    Returns the parsed time, or None if no HH:MM:SS pattern is found.
     """
-    img = cv2.imread(image_path)
-    if img is None:
+    if frame is None:
         return None
 
-    height, width, _ = img.shape
-    # Default ROI: lower-right corner
+    height, width = frame.shape[:2]
     if roi is None:
         roi = (0.8, 0.9, 1.0, 1.0)
 
@@ -48,10 +49,10 @@ def extract_datetime(
     x_end = int(width * roi[2])
     y_end = int(height * roi[3])
 
-    cropped = img[y_start:y_end, x_start:x_end]
+    cropped = frame[y_start:y_end, x_start:x_end]
     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
 
-    text = pytesseract.image_to_string(gray)
+    text = pytesseract.image_to_string(gray, config=_TESS_CONFIG)
     match = _TIME_RE.search(text)
     if match is None:
         return None
