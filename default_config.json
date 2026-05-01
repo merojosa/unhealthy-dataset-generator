@@ -4,6 +4,8 @@
     "dataset": "./test_dataset"
   },
   "tip_values": [2, 3, 4, 5, 6, 7, 8],
+  "non_ad_ratio": 1.0,
+  "non_ad_gap_seconds": 30,
   "tv_channels_mapping": {
     "1": "DN",
     "2": "CN",

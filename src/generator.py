@@ -1,6 +1,8 @@
+import glob
 import pandas as pd
 from typing import Optional, Any
 from src.processor import process_row
+from src import non_ad_generator
 import os
 import shutil
 
@@ -27,5 +29,8 @@ def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
         for tip_number in tip_values:
             if ad_type.startswith(f"{tip_number}="):  # Filter by tip_values
                 process_row(row, config)
+
+    ad_count = len(glob.glob(f"{result_path}/ad/*.jpg"))
+    non_ad_generator.generate_non_ad_images(ads_dataframe, config, ad_count)
 
     return ads_dataframe
