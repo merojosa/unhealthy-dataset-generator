@@ -11,7 +11,11 @@ fps = None
 total_frames = None
 
 
-def process_row(row: pd.Series, config: Any):
+def process_row(row: pd.Series, config: Any) -> int:
+    """Process one metadata row. Returns the number of ad frames written
+    (0 on any validation failure), so the caller can balance non-ad frames
+    against the actual ad-frame total without re-scanning the output dir.
+    """
     date = row["fec"]
     tv_channel = row["can"]
     start_time = row["hin"]
@@ -22,20 +26,20 @@ def process_row(row: pd.Series, config: Any):
     date_filename = get_date_filename(date)
     if tv_channel_filename is None or date_filename is None:
         print(f"Row error: incorrect tv channel or date. cod={row["cod"]}")
-        return None
+        return 0
 
     filename = f"{date_filename}_{tv_channel_filename}_processed.mp4"
     file_path = f"{config.get("path").get("videos")}/{filename}"
     if not os.path.isfile(file_path):
         print(
             f"Row error: file doesn't exist. cod={row["cod"]}, file_path={file_path}")
-        return None
+        return 0
 
     if not isinstance(start_time, time) and not isinstance(end_time, time):
         print(
             f"Row error: start time/end time are not datetime. cod={row["cod"]}, start_time={start_time}, end_time={end_time}"
         )
-        return None
+        return 0
 
     video_start_time = None
     try:
@@ -50,7 +54,7 @@ def process_row(row: pd.Series, config: Any):
     except Exception as e:
         print(
             f"video start time error. filename={filename} - Original error={e}")
-        return None
+        return 0
 
     times_in_seconds = get_times(
         video_start_time,
@@ -60,7 +64,7 @@ def process_row(row: pd.Series, config: Any):
 
     result_path = f"{config.get("path").get("dataset")}/result/ad"
     custom_name = f'{filename.replace(".mp4", "")}_{row["cod"]}'
-    extract_frames(
+    return extract_frames(
         video_path=file_path,
         output_dir=result_path,
         custom_name=custom_name,
@@ -108,6 +112,33 @@ def get_date_filename(date_row):
     return None
 
 
+def _crop(frame, custom_crop):
+    if not custom_crop:
+        return frame
+    height, width = frame.shape[:2]
+    return frame[
+        custom_crop.get("top"): height - custom_crop.get("bottom"),
+        custom_crop.get("left"): width - custom_crop.get("right"),
+    ]
+
+
+def _ocr_frame_at(target_frame: int, custom_crop, cod, label):
+    """Seek to target_frame, decode, crop, OCR. Returns the parsed time or None.
+
+    Used only for the boundary-OCR check below — the per-second extraction
+    loop never calls this because it advances via grab() instead of seeking.
+    """
+    video_capture.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+    ret, frame = video_capture.read()
+    if not ret:
+        return None
+    try:
+        return extract_datetime(_crop(frame, custom_crop))
+    except Exception as e:
+        print(f"OCR error at {label}. cod={cod}, error={e}")
+        return None
+
+
 def extract_frames(
     video_path: str,
     output_dir: str,
@@ -118,6 +149,28 @@ def extract_frames(
     ad_end_time: time,
     cod: Any,
 ):
+    """Extract one frame per second of the ad window and write JPEGs.
+
+    Two-phase design — the first phase decides whether the second phase
+    needs to OCR every frame:
+
+    1. Boundary OCR: read the first and last sampled frames, OCR their
+       burned-in clocks. If both timestamps fall inside [ad_start_time,
+       ad_end_time], the seek math from videos_metadata.start_time + the
+       row's hin/hfi is correct and the middle frames are guaranteed to
+       be in range too — so we skip OCR on them. If either boundary is
+       missing or out of range, fall back to OCR'ing every frame (the
+       original behavior) so that bad metadata still gets filtered.
+
+    2. Sequential extraction: seek once to the window start, then advance
+       one second at a time with grab() (no decode of skipped frames) and
+       only retrieve() the frame we keep. Much cheaper than calling
+       set(POS_FRAMES) per second, which forces a keyframe seek + decode.
+
+    The function keeps `video_capture`, `fps`, `total_frames`, and
+    `previous_video_path` as module-level globals so consecutive rows from
+    the same video reuse the open VideoCapture (see CLAUDE.md).
+    """
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
 
@@ -130,49 +183,86 @@ def extract_frames(
         fps = video_capture.get(cv2.CAP_PROP_FPS)
         total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    # Sample one frame per second of wall-clock video. `step` is the frame
+    # delta between samples; rounded so non-integer fps (e.g. 29.97) doesn't
+    # cause cumulative drift.
+    step = int(round(fps))
     start_frame = int(times_in_seconds[0] * fps)
     end_frame = min(
         int((times_in_seconds[1] + 1) * fps), total_frames
     )  # + 1 to include the final frame
+    n_samples = (end_frame - start_frame) // step + 1
+    if n_samples <= 0:
+        return 0
+    last_sample_frame = start_frame + (n_samples - 1) * step
+
+    # Phase 1 — boundary OCR. See the docstring for the rationale. For a
+    # single-sample window we only need one OCR call. The per-frame OCR
+    # branch in phase 2 keeps the original "OCR=None means keep the frame"
+    # semantic from CLAUDE.md, so a video whose overlay was cropped out
+    # behaves the same as before.
+    first_time = _ocr_frame_at(start_frame, custom_crop, cod, "boundary-first")
+    last_time = (
+        first_time
+        if n_samples == 1
+        else _ocr_frame_at(last_sample_frame, custom_crop, cod, "boundary-last")
+    )
+    boundaries_ok = (
+        first_time is not None
+        and last_time is not None
+        and ad_start_time <= first_time <= ad_end_time
+        and ad_start_time <= last_time <= ad_end_time
+    )
+
+    # Phase 2 — sequential extraction. Seek once to the window start; from
+    # here on we advance only with grab(). The boundary OCR above already
+    # left the capture position somewhere else, so this set() is required.
     video_capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    frame_count = start_frame
 
     counter = 0
     extracted = 0
     removed = 0
-    while frame_count <= end_frame:
-        # Get image
-        video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
+    for i in range(n_samples):
+        if i > 0:
+            # Advance (step - 1) frames with grab() — these are decoded but
+            # not retrieved into Python, which is much cheaper than read().
+            # The trailing read() below grabs + retrieves the frame we keep.
+            # We can't skip the grab calls entirely because video frames
+            # depend on prior frames (B/P-frames), so the decoder has to
+            # walk every frame in order between keyframes.
+            advanced = True
+            for _ in range(step - 1):
+                if not video_capture.grab():
+                    advanced = False
+                    break
+            if not advanced:
+                break
         ret, frame = video_capture.read()
         if not ret:
             break
 
-        # Crop image
-        height, width = frame.shape[:2]
-        if custom_crop:
-            frame = frame[
-                custom_crop.get("top"): height - custom_crop.get("bottom"),
-                custom_crop.get("left"): width - custom_crop.get("right"),
-            ]
-
-        # OCR the burned-in clock and skip frames whose timestamp falls
-        # outside [ad_start_time, ad_end_time]. Frames where OCR returns
-        # None (unreadable / overlay cropped out) are kept — we can't prove
-        # they're out of range.
-        try:
-            frame_time = extract_datetime(frame)
-        except Exception as e:
-            print(f"OCR error (kept frame). cod={cod}, counter={counter}, error={e}")
-            frame_time = None
-
+        frame = _crop(frame, custom_crop)
         extracted += 1
-        if frame_time is not None and (frame_time < ad_start_time or frame_time > ad_end_time):
-            removed += 1
-        else:
+
+        if boundaries_ok:
+            # Fast path: trust the seek math, no per-frame OCR.
             cv2.imwrite(f"{output_dir}/{custom_name}_{counter}.jpg", frame)
+        else:
+            # Fallback path: original per-frame OCR filter. Hit when the
+            # boundary clock was unreadable or out of range — usually a
+            # sign of wrong videos_metadata.start_time, channel mismatch,
+            # or the overlay being cropped out.
+            try:
+                frame_time = extract_datetime(frame)
+            except Exception as e:
+                print(f"OCR error (kept frame). cod={cod}, counter={counter}, error={e}")
+                frame_time = None
+            if frame_time is not None and (frame_time < ad_start_time or frame_time > ad_end_time):
+                removed += 1
+            else:
+                cv2.imwrite(f"{output_dir}/{custom_name}_{counter}.jpg", frame)
 
         counter += 1
-        frame_count += fps
 
     if removed > 5:
         print(
@@ -181,3 +271,5 @@ def extract_frames(
             f"Likely wrong video/metadata (start_time, hin/hfi, or channel mismatch). "
             f"cod={cod}, custom_name={custom_name}"
         )
+
+    return extracted - removed

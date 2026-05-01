@@ -13,6 +13,27 @@ _video_capture = None
 _fps = None
 _total_frames = None
 
+# Cache (fps, total_frames) per video path. Without this the same file is
+# opened twice — once in collect_non_ad_candidates just to read metadata,
+# then again in extract_non_ad_frame for actual decoding. With dozens of
+# videos in a dataset that's dozens of redundant open/close cycles.
+_video_meta_cache: dict[str, tuple[float, int]] = {}
+
+
+def _get_video_meta(file_path: str) -> tuple[float, int] | None:
+    """Return (fps, total_frames) for the video, opening it at most once."""
+    cached = _video_meta_cache.get(file_path)
+    if cached is not None:
+        return cached
+    cap = cv2.VideoCapture(file_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+    if fps <= 0 or total_frames <= 0:
+        return None
+    _video_meta_cache[file_path] = (fps, total_frames)
+    return _video_meta_cache[file_path]
+
 
 def collect_non_ad_candidates(
     df: pd.DataFrame, config: Any
@@ -54,13 +75,10 @@ def collect_non_ad_candidates(
             for s in range(lo, hi + 1):
                 ad_seconds.add(s)
 
-        cap = cv2.VideoCapture(file_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
-
-        if fps <= 0:
+        meta = _get_video_meta(file_path)
+        if meta is None:
             continue
+        fps, total_frames = meta
         video_duration_s = int(total_frames / fps)
 
         for s in range(0, video_duration_s):
@@ -93,8 +111,17 @@ def extract_non_ad_frame(
             _video_capture.release()
         _previous_video_path = video_path
         _video_capture = cv2.VideoCapture(video_path)
-        _fps = _video_capture.get(cv2.CAP_PROP_FPS)
-        _total_frames = int(_video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Reuse the cached metadata populated in collect_non_ad_candidates
+        # rather than re-querying the capture. cap.get() is cheap, but the
+        # cache lookup avoids a second container-header parse on each video.
+        meta = _video_meta_cache.get(video_path)
+        if meta is not None:
+            _fps, _total_frames = meta
+        else:
+            _fps = _video_capture.get(cv2.CAP_PROP_FPS)
+            _total_frames = int(_video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            if _fps > 0 and _total_frames > 0:
+                _video_meta_cache[video_path] = (_fps, _total_frames)
 
     frame_index = int(second * _fps)
     if frame_index >= _total_frames:
