@@ -26,22 +26,25 @@ There is no test suite, linter, or formatter configured.
 `main.py:load_config` looks for `config.json` in CWD and falls back to `default_config.json`. `validate_config` walks `default_config.json` recursively and requires every key to be present in `config.json` with a matching Python type — so `default_config.json` is the schema source of truth. Any new config key must be added there first (with a realistic default) or validation will reject user configs that include it.
 
 Key config fields and how they drive behavior:
-- `path.dataset`: root that must contain `metadata.xlsx`; output is written to `{dataset}/result/ad/` (wiped on each run — see `generator.py`).
+- `path.dataset`: root that must contain `metadata.xlsx`; output is written to `{dataset}/result/ad/` and `{dataset}/result/non_ad/` (wiped on each run).
 - `path.videos`: directory where the `.mp4` files live.
 - `tip_values`: integers. A metadata row is processed only if its `tip` column value *starts with* `"{n}="` for some `n` in this list (e.g. `tip_values=[2,3]` matches `"2=foo"` but not `"1=foo"`).
-- `tv_channels_mapping`: maps the first character of the `can` column to the filename suffix (e.g. `"1" → "DN"` means `can` starting with `1` reads `{date}_DN.mp4`).
+- `tv_channels_mapping`: maps the first character of the `can` column to the filename suffix (e.g. `"1" → "DN"` means `can` starting with `1` reads `{date}_DN_processed.mp4`).
 - `videos_metadata[filename].start_time` (`HH:MM:SS`): wall-clock time the video recording begins, used to convert the ad's `hin`/`hfi` times into video offsets.
 - `videos_metadata[filename].crop` (`top`/`bottom`/`left`/`right`): pixel crop applied to every extracted frame. Optional — if omitted, frames are saved uncropped.
+- `non_ad_ratio`: float, default `1.0`. Number of non-ad frames to generate as a multiple of the total ad frame count.
+- `non_ad_gap_seconds`: int, default `30`. Seconds before/after each ad window that are also excluded when selecting non-ad candidates.
 
 ## Architecture
 
-The pipeline is a straight line: `main.py` → `src/generator.py` → `src/processor.py` → `src/time_calculator.py`.
+The pipeline is a straight line: `main.py` → `src/generator.py` → `src/processor.py` → `src/time_calculator.py`, with `src/non_ad_generator.py` running after all ad rows are processed.
 
-1. **`generator.generate_dataset`** reads `{dataset}/metadata.xlsx` (first sheet) into a DataFrame, deletes any prior `{dataset}/result/`, then iterates rows and dispatches matching ones to `process_row`.
+1. **`generator.generate_dataset`** reads `{dataset}/metadata.xlsx` (first sheet) into a DataFrame, deletes any prior `{dataset}/result/`, iterates rows dispatching matching ones to `process_row`, then calls `non_ad_generator.generate_non_ad_images` to produce non-ad frames balanced against the ad count.
 2. **`processor.process_row`** is where per-row business logic lives. It resolves the video filename from the row's date (`fec`) and channel (`can`), validates that file + `videos_metadata` entry exist, computes the ad's start/end offsets, and calls `extract_frames`. Row-level errors are logged and the row is skipped — one bad row never aborts the whole run.
 3. **`processor.extract_frames`** pulls one frame per second of the ad window (stepping `frame_count` by `fps`), optionally crops it, and writes `{custom_name}_{counter}.jpg`. It keeps `video_capture`, `fps`, `total_frames`, and `previous_video_path` as **module-level globals** so consecutive rows from the same video reuse the open `cv2.VideoCapture` — do not refactor this into per-call state without replacing it with an equivalent cache, or throughput will collapse on large metadata files.
 4. **`processor.remove_out_of_range_frames`** runs immediately after `extract_frames` for the same row. It globs the row's `{custom_name}_*.jpg` outputs, OCRs the timestamp overlay via `time_calculator.extract_datetime`, and deletes frames whose time falls outside `[hin, hfi]`. Frames where OCR returns `None` (unreadable or overlay cropped out) are kept — we can't prove they're out of range. This roughly doubles per-row runtime; if the video's `crop` strips the overlay, the filter becomes a no-op.
-5. **`time_calculator.get_times`** just subtracts `datetime`s to get `(start_seconds, end_seconds)` offsets into the video. `time_calculator.extract_datetime` OCRs the lower-right ROI of a saved frame and returns a parsed `datetime.time` (or `None`).
+5. **`time_calculator.get_times`** subtracts `datetime`s to get `(start_seconds, end_seconds)` offsets into the video. `time_calculator.extract_datetime` OCRs the lower-right ROI of a saved frame and returns a parsed `datetime.time` (or `None`).
+6. **`non_ad_generator.generate_non_ad_images`** collects every second in each video that is not within `non_ad_gap_seconds` of any ad window, then evenly samples `round(ad_count * non_ad_ratio)` of those candidates and extracts one frame per candidate to `{dataset}/result/non_ad/`. Like `processor`, it uses module-level globals to cache the open `cv2.VideoCapture` across consecutive frames from the same video.
 
 ### Metadata schema (columns consumed from `metadata.xlsx`)
 - `tip` — ad type tag, filtered by `tip_values`
@@ -55,7 +58,9 @@ The pipeline is a straight line: `main.py` → `src/generator.py` → `src/proce
 ```
 {path.dataset}/
   metadata.xlsx
-  result/ad/            # generated, wiped each run
+  result/
+    ad/                 # generated, wiped each run
+    non_ad/             # generated, wiped each run
 {path.videos}/
-  YYYY-MM-DD_{channel}.mp4
+  YYYY-MM-DD_{channel}_processed.mp4
 ```
