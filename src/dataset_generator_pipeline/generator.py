@@ -1,7 +1,7 @@
 import pandas as pd
 from typing import Optional, Any
-from src.processor import process_row
-from src import non_ad_generator
+from processor import process_row
+from non_ad_generator import generate_non_ad_images
 import os
 import shutil
 
@@ -33,6 +33,6 @@ def generate_dataset(config: Any) -> Optional[pd.DataFrame]:
             if ad_type.startswith(f"{tip_number}="):  # Filter by tip_values
                 ad_count += process_row(row, config)
 
-    non_ad_generator.generate_non_ad_images(ads_dataframe, config, ad_count)
+    generate_non_ad_images(ads_dataframe, config, ad_count)
 
     return ads_dataframe

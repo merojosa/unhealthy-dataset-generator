@@ -5,8 +5,8 @@ from typing import Any
 import cv2
 import pandas as pd
 
-from src.processor import get_channel_filename, get_date_filename
-from src.time_calculator import get_times
+from processor import get_channel_filename, get_date_filename
+from time_calculator import get_times
 
 _previous_video_path = ""
 _video_capture = None

@@ -3,7 +3,7 @@ from typing import Any
 from datetime import datetime, time
 import os
 import cv2
-from src.time_calculator import get_times, extract_datetime
+from time_calculator import get_times, extract_datetime
 
 previous_video_path = ""
 video_capture = None

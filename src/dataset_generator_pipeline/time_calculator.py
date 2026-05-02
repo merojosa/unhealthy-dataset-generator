@@ -2,7 +2,6 @@ from datetime import time, datetime, date
 from typing import Optional
 import os
 import re
-
 import cv2
 import numpy as np
 import tesserocr
