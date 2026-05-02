@@ -32,7 +32,8 @@
       "start_time": "05:59:03"
     },
     "2024-04-02_CN_processed.mp4": {
-      "start_time": "05:54:12"
+      "start_time": "05:54:12",
+      "crop": { "top": 11, "bottom": 70, "left": 13, "right": 410 }
     },
     "2024-04-02_CN_Prueba01_processed.mp4": {
       "start_time": "05:45:14"
@@ -41,7 +42,8 @@
       "start_time": "05:47:46"
     },
     "2024-04-02_DN_processed.mp4": {
-      "start_time": "05:55:13"
+      "start_time": "05:55:13",
+      "crop": { "top": 11, "bottom": 70, "left": 13, "right": 374 }
     },
     "2024-04-02_Varios_Prueba05_processed.mp4": {
       "start_time": "05:41:12"
@@ -65,175 +67,227 @@
       "start_time": "13:39:35"
     },
     "2024-04-03_CN_processed.mp4": {
-      "start_time": "05:53:56"
+      "start_time": "05:53:56",
+      "crop": { "top": 11, "bottom": 70, "left": 13, "right": 374 }
     },
     "2024-04-03_DN_processed.mp4": {
-      "start_time": "05:52:46"
+      "start_time": "05:52:46",
+      "crop": { "top": 8, "bottom": 42, "left": 13, "right": 373 }
     },
     "2024-04-04_canal_6_processed.mp4": {
-      "start_time": "05:59:24"
+      "start_time": "05:59:24",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 320 }
     },
     "2024-04-04_canal_7_processed.mp4": {
-      "start_time": "05:59:33"
+      "start_time": "05:59:33",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 271 }
     },
     "2024-04-04_CN_processed.mp4": {
-      "start_time": "06:59:15"
+      "start_time": "06:59:15",
+      "crop": { "top": 9, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-04_DN_processed.mp4": {
-      "start_time": "05:54:43"
+      "start_time": "05:54:43",
+      "crop": { "top": 8, "bottom": 40, "left": 13, "right": 374 }
     },
     "2024-04-05_canal_6_processed.mp4": {
-      "start_time": "05:58:51"
+      "start_time": "05:58:51",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-04-05_canal_7_processed.mp4": {
-      "start_time": "06:01:17"
+      "start_time": "06:01:17",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 272 }
     },
     "2024-04-05_CN_processed.mp4": {
-      "start_time": "05:49:54"
+      "start_time": "05:49:54",
+      "crop": { "top": 9, "bottom": 40, "left": 13, "right": 372 }
     },
     "2024-04-05_DN_processed.mp4": {
-      "start_time": "05:49:08"
+      "start_time": "05:49:08",
+      "crop": { "top": 9, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-06_canal_6_processed.mp4": {
-      "start_time": "06:01:17"
+      "start_time": "06:01:17",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-04-06_canal_7_processed.mp4": {
-      "start_time": "06:03:28"
+      "start_time": "06:03:28",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 272 }
     },
     "2024-04-06_CN_processed.mp4": {
-      "start_time": "05:49:36"
+      "start_time": "05:49:36",
+      "crop": { "top": 9, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-06_DN_processed.mp4": {
-      "start_time": "05:47:43"
+      "start_time": "05:47:43",
+      "crop": { "top": 9, "bottom": 40, "left": 13, "right": 374 }
     },
     "2024-04-08_canal_6_prueba_processed.mp4": {
       "start_time": "05:59:42"
     },
     "2024-04-08_canal_7_processed.mp4": {
-      "start_time": "05:59:06"
+      "start_time": "05:59:06",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 272 }
     },
     "2024-04-08_CN_processed.mp4": {
-      "start_time": "05:55:59"
+      "start_time": "05:55:59",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-08_DN_processed.mp4": {
-      "start_time": "05:56:38"
+      "start_time": "05:56:38",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-09_canal_6_processed.mp4": {
-      "start_time": "05:59:40"
+      "start_time": "05:59:40",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-04-09_canal_7_processed.mp4": {
-      "start_time": "05:58:02"
+      "start_time": "05:58:02",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-04-09_CN_processed.mp4": {
-      "start_time": "05:56:55"
+      "start_time": "05:56:55",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-09_DN_processed.mp4": {
-      "start_time": "05:55:51"
+      "start_time": "05:55:51",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-26_canal_6_processed.mp4": {
-      "start_time": "05:58:25"
+      "start_time": "05:58:25",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-04-26_canal_7_processed.mp4": {
-      "start_time": "05:58:04"
+      "start_time": "05:58:04",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-04-26_CN_processed.mp4": {
-      "start_time": "05:51:03"
+      "start_time": "05:51:03",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-26_DN_processed.mp4": {
-      "start_time": "05:51:49"
+      "start_time": "05:51:49",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-28_canal_6_processed.mp4": {
-      "start_time": "06:01:59"
+      "start_time": "06:01:59",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-04-28_canal_7_processed.mp4": {
-      "start_time": "06:01:49"
+      "start_time": "06:01:49",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-04-28_CN_processed.mp4": {
-      "start_time": "05:46:28"
+      "start_time": "05:46:28",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-04-28_DN_processed.mp4": {
-      "start_time": "05:46:58"
-    },
-    "2024-05-02_canal_6 (2)_processed.mp4": {
-      "start_time": "05:59:24"
+      "start_time": "05:46:58",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-02_canal_6_processed.mp4": {
-      "start_time": "05:59:24"
+      "start_time": "05:59:24",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-02_canal_7_processed.mp4": {
-      "start_time": "05:59:46"
+      "start_time": "05:59:46",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-02_CN_processed.mp4": {
-      "start_time": "05:51:55"
+      "start_time": "05:51:55",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-02_DN_processed.mp4": {
-      "start_time": "05:53:04"
+      "start_time": "05:53:04",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-04_canal_6_processed.mp4": {
-      "start_time": "05:56:38"
+      "start_time": "05:56:38",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-04_canal_7_processed.mp4": {
-      "start_time": "05:59:07"
+      "start_time": "05:59:07",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-04_CN_processed.mp4": {
-      "start_time": "05:59:54"
+      "start_time": "05:59:54",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-04_DN_processed.mp4": {
-      "start_time": "06:01:13"
+      "start_time": "06:01:13",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-11_canal_6_processed.mp4": {
-      "start_time": "05:55:30"
+      "start_time": "05:55:30",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-11_canal_7_processed.mp4": {
-      "start_time": "05:57:46"
+      "start_time": "05:57:46",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-11_CN_processed.mp4": {
-      "start_time": "05:43:41"
+      "start_time": "05:43:41",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-11_DN_processed.mp4": {
-      "start_time": "05:44:55"
+      "start_time": "05:44:55",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-15_canal_6_processed.mp4": {
-      "start_time": "05:56:24"
+      "start_time": "05:56:24",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-15_canal_7_processed.mp4": {
-      "start_time": "06:00:11"
+      "start_time": "06:00:11",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-15_CN_processed.mp4": {
-      "start_time": "05:53:41"
+      "start_time": "05:53:41",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-15_DN_processed.mp4": {
-      "start_time": "05:54:07"
+      "start_time": "05:54:07",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-18_canal_6_processed.mp4": {
-      "start_time": "05:55:47"
+      "start_time": "05:55:47",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-18_canal_7_processed.mp4": {
-      "start_time": "05:58:27"
+      "start_time": "05:58:27",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-18_CN_processed.mp4": {
-      "start_time": "04:51:51"
+      "start_time": "04:51:51",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-18_DN_processed.mp4": {
-      "start_time": "04:53:20"
+      "start_time": "04:53:20",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-21_canal_6_processed.mp4": {
-      "start_time": "05:59:49"
+      "start_time": "05:59:49",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 316 }
     },
     "2024-05-21_canal_7_processed.mp4": {
-      "start_time": "06:02:05"
+      "start_time": "06:02:05",
+      "crop": { "top": 0, "bottom": 0, "left": 0, "right": 273 }
     },
     "2024-05-21_CN_processed.mp4": {
-      "start_time": "05:50:09"
+      "start_time": "05:50:09",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-21_DN_processed.mp4": {
-      "start_time": "05:51:30"
+      "start_time": "05:51:30",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-26_CN_processed.mp4": {
-      "start_time": "06:00:07"
+      "start_time": "06:00:07",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     },
     "2024-05-26_DN_processed.mp4": {
-      "start_time": "06:01:10"
+      "start_time": "06:01:10",
+      "crop": { "top": 10, "bottom": 40, "left": 13, "right": 373 }
     }
   }
 }
