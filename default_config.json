@@ -1,7 +1,7 @@
 {
   "path": {
     "videos": "E:/Jose/thesis_dataset/processed",
-    "dataset": "./test_dataset"
+    "dataset": "./dataset"
   },
   "tip_values": [2, 3, 4, 5, 6, 7, 8],
   "non_ad_ratio": 1.0,
