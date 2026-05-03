@@ -56,3 +56,23 @@ source ./unhealthy-dataset-generator-env/bin/activate
   - `videos_metadata` details at what time a video starts and how the video crop should be (for crop values, check `test_custom_crop_params.py`)
 - To check a particular video, you should populate `metadata.xlsx` with the data related to the video. For example, if you want to test `2024-04-06_DN.mp4`, you should filter "can" to 1 and "fec" to 06-04-24.
 - The output of the script will be on `path/result`. Every image has the following structure: video name where the it was extracted + id from `metadata.xlsx`("cod" column) + counter id + .jpg.
+
+## Utility scripts
+
+### Tuning crop parameters (`src/misc/test_custom_crop_params.py`)
+
+Helps you find the right crop values for `videos_metadata.<filename>.crop` in `config.json`. Pass a video path and crop amounts (in pixels) for each side — it opens a random frame from the video with that crop applied so you can judge the result visually. Once the frame looks right, copy the printed `"crop": {...}` snippet into your config.
+
+```
+python src/misc/test_custom_crop_params.py --video_path <path> --top <n> --bottom <n> --left <n> --right <n>
+```
+
+### Reviewing the generated dataset (`src/misc/review_dataset.py`)
+
+A desktop GUI for manually inspecting and cleaning the images produced by the pipeline. Run it from the repo root after the pipeline has finished:
+
+```
+python src/misc/review_dataset.py
+```
+
+It lets you browse ad frames (grouped by ad) and non-ad frames, select bad images, and move them to a `result/discarded/` folder. Discarded images are not deleted and can be restored.
