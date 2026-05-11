@@ -44,18 +44,37 @@ source ./unhealthy-dataset-generator-env/bin/activate
 
   On **macOS / Linux**, `pip install -r requirements.txt` builds `tesserocr` from source against the Tesseract dev headers installed in the previous step.
 
-- Execute the script: `python main.py`
+- Execute the script: `python -m src.dataset_generator_pipeline.main` (run from the repo root — paths in the config are resolved relative to the current working directory)
 
 ## Instructions
 
 - The entire project works with a config.json. Check `default_config.json` to understand the structure.
   - `path` is where the script will read the `metadata.xlsx` and videos. It will look something like this:
     ![alt text](assets/path_structure.png)
-  - `tip_values` are the values the script will get according to the `metadata.xlsx` column "tip". In this particular case, only 1 will be discarded.
-  - `tv_channels_mapping` is the mapping between numbers and the channels. 1= is Disney for example. Check column "can". This setting is important because it's how the script will read the videos. So, for example, if the value is 1 on "can", the script will check every single video that ends with `_DN.mp4`.
-  - `videos_metadata` details at what time a video starts and how the video crop should be (for crop values, check `test_custom_crop_params.py`)
+  - `tip_values`: list of integers. A metadata row is processed only if its `tip` column value *starts with* `"N="` for some N in this list — e.g. `[2,3,4,5,6,7,8]` skips any row whose `tip` starts with `"1="`.
+  - `non_ad_ratio`: float (default `1.0`). Number of non-ad frames to generate as a multiple of the total ad frame count — e.g. `1.0` produces one non-ad frame per ad frame, `2.0` produces twice as many.
+  - `non_ad_gap_seconds`: int (default `30`). Seconds before and after each ad window that are also excluded when selecting non-ad frame candidates, to avoid borderline content.
+  - `tv_channels_mapping`: maps the first character of the `can` column to a filename suffix. For example, `"1" → "DN"` means a row with `can` starting with `1` reads `{date}_DN_processed.mp4`. Add one entry per channel.
+  - `videos_metadata`: one entry per video file. `start_time` (`HH:MM:SS`) is the wall-clock time the recording begins — the pipeline subtracts this from the ad's `hin`/`hfi` times to find the frame offset inside the video. `crop` (`top`/`bottom`/`left`/`right`, in pixels) trims each extracted frame; it is optional and can be omitted if no crop is needed (use `test_custom_crop_params.py` to find the right values).
 - To check a particular video, you should populate `metadata.xlsx` with the data related to the video. For example, if you want to test `2024-04-06_DN.mp4`, you should filter "can" to 1 and "fec" to 06-04-24.
 - The output of the script will be on `path/result`. Every image has the following structure: video name where the it was extracted + id from `metadata.xlsx`("cod" column) + counter id + .jpg.
+
+## Expected directory layout
+
+```
+{path.dataset}/
+  metadata.xlsx
+  result/              # created by the pipeline, wiped on each run
+    ad/
+    non_ad/
+    discarded/         # created by review_dataset.py, never wiped automatically
+      ad/
+      non_ad/
+{path.videos}/
+  YYYY-MM-DD_{channel}_processed.mp4
+```
+
+Output filenames follow the pattern `{video}_{cod}_{counter}.jpg`, where `cod` is the row ID from the `cod` column of `metadata.xlsx`.
 
 ## Utility scripts
 

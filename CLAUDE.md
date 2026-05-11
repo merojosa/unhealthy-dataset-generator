@@ -10,7 +10,8 @@ Activate the virtualenv before any Python command:
 
 - Install deps: `pip install -r requirements.txt`
 - Run the generator: `python -m src.dataset_generator_pipeline.main` (from the repo root — paths in the config are resolved relative to CWD)
-- Inspect/tune crop params for a video: `python test_custom_crop_params.py --video_path <path> --top <n> --bottom <n> --left <n> --right <n>`. This opens a window showing the cropped frame and prints a `"crop": {...}` snippet to paste into `videos_metadata.<filename>.crop` in the config.
+- Review generated frames: `python src/misc/review_dataset.py` — opens a Tkinter GUI that browses `result/ad/` by ad batch and `result/non_ad/` by page. Keyboard shortcuts: `A` select all, `D` discard & advance, `H`/`L` or arrow keys to navigate, `Ctrl+Z` undo last discard. Discarded frames are moved (not deleted) to `result/discarded/ad/` or `result/discarded/non_ad/`.
+- Inspect/tune crop params for a video: `python src/misc/test_custom_crop_params.py --video_path <path> --top <n> --bottom <n> --left <n> --right <n>`. This opens a window showing the cropped frame and prints a `"crop": {...}` snippet to paste into `videos_metadata.<filename>.crop` in the config.
 
 OCR uses `tesserocr` (in-process libtesseract binding) — `pytesseract` was replaced because it spawned `tesseract.exe` per call, which dominated runtime on Windows. `time_calculator._get_api()` lazy-initializes a singleton `PyTessBaseAPI` that lives for the process lifetime; do not create per-call instances. The Tesseract binary is still required:
 - Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki); add the install dir (e.g. `C:\Program Files\Tesseract-OCR`) to `PATH`. `time_calculator._resolve_tessdata_path` looks at `TESSDATA_PREFIX` first, then falls back to `C:\Program Files\Tesseract-OCR\tessdata`.
@@ -71,6 +72,9 @@ The pipeline is a straight line: `src/dataset_generator_pipeline/main.py` → `s
   result/
     ad/                 # generated, wiped each run
     non_ad/             # generated, wiped each run
+    discarded/          # created by review_dataset.py, never wiped automatically
+      ad/
+      non_ad/
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
