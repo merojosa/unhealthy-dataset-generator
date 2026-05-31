@@ -87,12 +87,14 @@ class ReviewApp(tk.Tk):
         self.title("Dataset Image Reviewer")
         self.geometry("1100x700")
         self.minsize(800, 500)
+        self.state("zoomed")  # start maximized (Windows)
 
         self.dataset_dir = dataset_dir
         self.ad_dir = dataset_dir / "result" / "ad"
         self.non_ad_dir = dataset_dir / "result" / "non_ad"
         self.discard_ad_dir = dataset_dir / "result" / "discarded" / "ad"
         self.discard_non_ad_dir = dataset_dir / "result" / "discarded" / "non_ad"
+        self.progress_path = dataset_dir / "result" / ".review_progress.json"
 
         # State
         self.mode = tk.StringVar(value="ad")
@@ -110,8 +112,14 @@ class ReviewApp(tk.Tk):
         self.discarded_ad_count = tk.IntVar(value=0)
         self.discarded_non_ad_count = tk.IntVar(value=0)
 
+        # Saved review progress, applied once after the first directory scan.
+        self._progress = self._load_progress()
+        self._restored = False
+
         self._build_ui()
         self._reload_data()
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -141,8 +149,8 @@ class ReviewApp(tk.Tk):
         self.paned.pack(fill=tk.BOTH, expand=True)
 
         # Left sidebar
-        self.sidebar = tk.Frame(self.paned, bg="#1e1e1e", width=220)
-        self.paned.add(self.sidebar, minsize=150)
+        self.sidebar = tk.Frame(self.paned, bg="#1e1e1e", width=300)
+        self.paned.add(self.sidebar, minsize=200)
 
         self.sidebar_label = tk.Label(self.sidebar, text="Batches", fg="#aaa",
                                       bg="#1e1e1e", font=("Segoe UI", 9, "bold"))
@@ -248,8 +256,59 @@ class ReviewApp(tk.Tk):
         else:
             self.non_ad_images = []
 
+        if not self._restored:
+            self._apply_saved_progress()
+            self._restored = True
+
         self._populate_sidebar()
         self._show_current()
+
+    # ------------------------------------------------------------------
+    # Progress persistence
+    # ------------------------------------------------------------------
+
+    def _load_progress(self) -> dict:
+        try:
+            return json.loads(self.progress_path.read_text())
+        except Exception:
+            return {}
+
+    def _save_progress(self):
+        if self.ad_keys and 0 <= self.current_batch_idx < len(self.ad_keys):
+            ad_key = self.ad_keys[self.current_batch_idx]
+        else:
+            ad_key = None
+        data = {
+            "mode": self.mode.get(),
+            "ad_batch_key": ad_key,
+            "non_ad_page": self.current_page,
+        }
+        try:
+            self.progress_path.parent.mkdir(parents=True, exist_ok=True)
+            self.progress_path.write_text(json.dumps(data, indent=2))
+        except Exception:
+            pass
+
+    def _apply_saved_progress(self):
+        """Restore the last reviewed position from disk (called once at startup)."""
+        p = self._progress
+        if not p:
+            return
+        mode = p.get("mode")
+        if mode in ("ad", "non_ad"):
+            self.mode.set(mode)
+        # Resolve the AD batch by name so discards shifting indices don't matter.
+        key = p.get("ad_batch_key")
+        if key in self.ad_keys:
+            self.current_batch_idx = self.ad_keys.index(key)
+        page = p.get("non_ad_page")
+        if isinstance(page, int):
+            total_pages = max(1, (len(self.non_ad_images) + PAGE_SIZE - 1) // PAGE_SIZE)
+            self.current_page = max(0, min(total_pages - 1, page))
+
+    def _on_close(self):
+        self._save_progress()
+        self.destroy()
 
     # ------------------------------------------------------------------
     # Sidebar
@@ -294,6 +353,7 @@ class ReviewApp(tk.Tk):
         self.current_page = 0
         self._populate_sidebar()
         self._show_current()
+        self._save_progress()
 
     def _on_batch_select(self, event):
         sel = self.batch_listbox.curselection()
@@ -305,6 +365,7 @@ class ReviewApp(tk.Tk):
         else:
             self.current_page = sel[0]
         self._show_current()
+        self._save_progress()
 
     def navigate(self, delta: int):
         self.selected.clear()
@@ -318,6 +379,7 @@ class ReviewApp(tk.Tk):
             self.current_page = max(0, min(total_pages - 1, self.current_page + delta))
         self._populate_sidebar()
         self._show_current()
+        self._save_progress()
 
     def _show_current(self):
         if self.mode.get() == "ad":
@@ -505,6 +567,7 @@ class ReviewApp(tk.Tk):
         self._reload_data_soft()
         self._populate_sidebar()
         self._show_current()
+        self._save_progress()
 
     # ------------------------------------------------------------------
     # Status bar
