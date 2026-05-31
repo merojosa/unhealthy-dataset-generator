@@ -40,12 +40,22 @@ def _batch_key(path: Path) -> str:
     return path.stem.rsplit("_", 1)[0]
 
 
+def _counter(path: Path) -> int:
+    """Trailing _{counter} as an int, for numeric (not lexicographic) ordering."""
+    try:
+        return int(path.stem.rsplit("_", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
 def scan_ad(ad_dir: Path) -> dict[str, list[Path]]:
     files = sorted(ad_dir.glob("*.jpg"))
     batches: dict[str, list[Path]] = {}
     for f in files:
         key = _batch_key(f)
         batches.setdefault(key, []).append(f)
+    for frames in batches.values():
+        frames.sort(key=_counter)
     return batches
 
 
@@ -455,7 +465,7 @@ class ReviewApp(tk.Tk):
             lbl.pack()
             lbl.bind("<Button-1>", lambda e, p=path: self._toggle(p))
 
-            name_lbl = tk.Label(cell, text=path.name[-28:], fg="#999",
+            name_lbl = tk.Label(cell, text=path.name, fg="#999",
                                  bg="#2d2d2d", font=("Consolas", 7), wraplength=THUMB_W)
             name_lbl.pack()
 
