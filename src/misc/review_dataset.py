@@ -180,7 +180,8 @@ class ReviewApp(tk.Tk):
                                   command=self.batch_listbox.yview)
         sb_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.batch_listbox.config(yscrollcommand=sb_scroll.set)
-        self.batch_listbox.bind("<<ListboxSelect>>", self._on_batch_select)
+        # Navigate on double-click only, so a stray single click can't jump batches.
+        self.batch_listbox.bind("<Double-Button-1>", self._on_batch_select)
 
         # Right panel
         right = tk.Frame(self.paned, bg="#2d2d2d")
