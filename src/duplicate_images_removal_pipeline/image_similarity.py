@@ -10,9 +10,9 @@ import json
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-# Igual que main.py, esto busca config.json en el CWD y si no lo encuentra
-# se cae a default_config.json (que asumimos siempre presente).
-# Retorna el bloque "duplicate_images_removal".
+# Same as main.py: look for config.json in the CWD and, if it isn't there,
+# fall back to default_config.json (assumed to always be present).
+# Returns the "duplicate_images_removal" block.
 def load_similarity_config() -> dict:
     try:
         with open("config.json") as f:
@@ -23,45 +23,44 @@ def load_similarity_config() -> dict:
 
     return config["duplicate_images_removal"]
 
-# Esto se mete recursivamente en el folder, y retorna
-# una lista ordenada de rutas de imágenes con alguna extensión válida
-# ordenadas lexicográficamente
+# Recurse into the folder and return a lexicographically sorted list of
+# image paths whose extension is a valid one.
 def load_image_paths(folder: str) -> list[Path]:
     folder_path = Path(folder)
-    # Por si el path está mal puesto
+    # In case the path is wrong.
     if not folder_path.exists():
-        raise FileNotFoundError(f"La carpeta no existe: {folder}")
-    # Retorne todas las rutas de imágenes en ese folder lexicográficamente ordenadas
+        raise FileNotFoundError(f"Folder does not exist: {folder}")
+    # Return every image path in that folder, lexicographically sorted.
     return sorted(
         path for path in folder_path.rglob("*")
         if path.suffix.lower() in IMAGE_EXTENSIONS
     )
 
-# El objetivo de esto es manejar todas las imágenes con formato RGB
+# The goal here is to handle every image in RGB format.
 def load_image(path: Path) -> Image.Image | None:
     try:
-        # Lo que va a hacer img.convert("RGB") es,
-        # a cada pixel de la imagen, asignarle un valor RGB (tres sequential bytes)
-        # y retornar el "vector" de RGBs (el equivalente a un vector en img)
+        # What img.convert("RGB") does is assign every pixel an RGB value
+        # (three sequential bytes) and return the "vector" of RGBs
+        # (the image's equivalent of a vector).
         with Image.open(path) as img:
             return img.convert("RGB")
     except Exception as error:
-        print(f"Opa, no pude leer {path}: {error}")
+        print(f"Could not read {path}: {error}")
         return None
 
-# La idea de los perceptual hashes es que dos imágenes "parecidas", 
-# le tiren hashes similares. 
-# Ahora, cuando uno hace difference hash, usted lo que hace es comparar
-# los cambios de brightness entre pixeles adyacentes 
-# (dos pixeles son adyacentes sii uno está a la izquierda del otro)
-# Se usa perceptual_dHash porque es como el punto medio entre effectiveness y speed.
+# The idea behind perceptual hashes is that two "similar" images produce
+# similar hashes.
+# With a difference hash, you compare the brightness changes between adjacent
+# pixels (two pixels are adjacent iff one is to the left of the other).
+# perceptual_dhash is used because it's a sweet spot between effectiveness
+# and speed.
 def perceptual_dhash(image: Image.Image, hash_size: int = 8) -> int:
 
     try:
         resample_filter = Image.Resampling.LANCZOS
     except AttributeError:
         resample_filter = Image.LANCZOS
-    # OJO: el perceptual_dhash siempre trabaja con imágenes en escala de grises
+    # NOTE: perceptual_dhash always works on grayscale images.
     gray = image.convert("L").resize(
         (hash_size + 1, hash_size),
         resample_filter,
@@ -69,7 +68,7 @@ def perceptual_dhash(image: Image.Image, hash_size: int = 8) -> int:
 
     pixels = np.asarray(gray, dtype=np.int16)
 
-    # Compara cada pixel con el de la derecha.
+    # Compare each pixel with the one to its right.
     differences = pixels[:, 1:] > pixels[:, :-1]
 
     hash_value = 0
@@ -79,17 +78,17 @@ def perceptual_dhash(image: Image.Image, hash_size: int = 8) -> int:
 
     return hash_value
 
-# Esto solo me dice cuántos bits son diferentes entre dos hashes
-# Ojo que eso (claramente) lo puedo sacar con un XOR
+# This just tells me how many bits differ between two hashes.
+# Note that (obviously) this can be obtained with a XOR.
 def hamming_distance(hash_1: int, hash_2: int) -> int:
     return (hash_1 ^ hash_2).bit_count()
 
-# Esto busca, para cada imagen: 
-# 1. Cárguela
-# 2. Calcule el hash perceptual 
-# 3. Calcule embedding CLIP
-# y de paso descarta imágenes si por A o por B no se pudieron abrir
-# Va a retornar una tupla de (valid_rutas, embeddings, hashes)
+# For each image this:
+# 1. Loads it
+# 2. Computes the perceptual hash
+# 3. Computes the CLIP embedding
+# and along the way discards images that, for whatever reason, couldn't be opened.
+# Returns a tuple of (valid_paths, embeddings, hashes).
 def compute_embeddings_and_hashes_from_paths(
     model,
     image_paths: list[Path],
@@ -100,9 +99,9 @@ def compute_embeddings_and_hashes_from_paths(
     valid_paths = []
     all_embeddings = []
     all_hashes = []
-    # las imágenes se van a ir procesando en batches de tamagno 32
-    for start in tqdm(range(0, len(image_paths), batch_size), desc="Calculando embeddings y hashes"):
-        # saque las rutas del batch actual
+    # Images are processed in batches of size 32.
+    for start in tqdm(range(0, len(image_paths), batch_size), desc="Computing embeddings and hashes"):
+        # Grab the paths for the current batch.
         batch_paths = image_paths[start:start + batch_size]
 
         images = []
@@ -121,8 +120,8 @@ def compute_embeddings_and_hashes_from_paths(
 
         if len(images) == 0:
             continue
-        # yo voy a normalizar los vectores para que el producto punto de cualesquiera dos sea 
-        # la similitud coseno
+        # Normalize the vectors so that the dot product of any two is the
+        # cosine similarity.
         embeddings = model.encode(
             images,
             batch_size=batch_size,
@@ -143,8 +142,8 @@ def compute_embeddings_and_hashes_from_paths(
 
     return valid_paths, np.vstack(all_embeddings), all_hashes
 
-# Esto es solo para ir escribiendo resultados en un csv
-# Si es la primera vez que se escribe en el csv, se mete un header, sino no
+# This just appends results to a csv.
+# On the first write a header is added, otherwise it isn't.
 def append_rows_to_csv(
     rows: list[dict],
     columns: list[str],
@@ -171,8 +170,8 @@ def append_rows_to_csv(
 
     return False
 
-# Esto es solo para crear un csv vacío por si no se encuentra nada con 
-# la similitud esperada
+# This just creates an empty csv in case nothing matches the expected
+# similarity.
 def create_empty_csv(output: str, columns: list[str]) -> None:
     output_path = Path(output)
 
@@ -181,7 +180,7 @@ def create_empty_csv(output: str, columns: list[str]) -> None:
 
     pd.DataFrame(columns=columns).to_csv(output, index=False)
 
-# Ok, esto es para comparar una imagen con todas las posteriores
+# This compares each image against all the ones that come after it.
 def find_similar_pairs_three_methods_chunked(
     image_paths: list[Path],
     embeddings: np.ndarray,
@@ -199,8 +198,8 @@ def find_similar_pairs_three_methods_chunked(
 
     n = len(image_paths)
     hash_bits = hash_size * hash_size
-    # van a haber tres comparaciones: CLIP, HASH, y el combinado
-    
+    # There will be three comparisons: CLIP, HASH, and the combined one.
+
     clip_columns = [
         "image_1",
         "image_2",
@@ -230,10 +229,10 @@ def find_similar_pairs_three_methods_chunked(
     first_hash_write = True
     first_combined_write = True
 
-    for start in tqdm(range(0, n, chunk_size), desc="Comparando imágenes"):
+    for start in tqdm(range(0, n, chunk_size), desc="Comparing images"):
         end = min(start + chunk_size, n)
 
-        # Como los embeddings están normalizados, el producto punto es cosine similarity.
+        # Since the embeddings are normalized, the dot product is the cosine similarity.
         sim_block = embeddings[start:end] @ embeddings.T
 
         clip_rows = []
@@ -243,18 +242,18 @@ def find_similar_pairs_three_methods_chunked(
         for local_i in range(end - start):
             i = start + local_i
 
-            # Solo revisamos j > i para no repetir pares ni comparar una imagen consigo misma.
+            # Only check j > i so we don't repeat pairs or compare an image with itself.
             for j in range(i + 1, n):
                 clip_similarity = float(sim_block[local_i, j])
 
                 distance = hamming_distance(hashes[i], hashes[j])
                 hash_similarity = 1.0 - (distance / hash_bits)
-                # el combined score como corresponde
+                # The combined score.
                 combined_score = (
                     clip_weight * clip_similarity
                     + (1.0 - clip_weight) * hash_similarity
                 )
-                
+
                 if clip_similarity >= clip_threshold:
                     clip_rows.append({
                         "image_1": str(image_paths[i]),
@@ -303,8 +302,8 @@ def find_similar_pairs_three_methods_chunked(
             combined_output,
             first_combined_write,
         )
-    # first_clip_write va a ser true sii no pudo append nada
-    # lo mismo con los otros
+    # first_clip_write stays True iff nothing was appended.
+    # Same for the others.
     if first_clip_write:
         create_empty_csv(clip_output, clip_columns)
 
@@ -314,7 +313,7 @@ def find_similar_pairs_three_methods_chunked(
     if first_combined_write:
         create_empty_csv(combined_output, combined_columns)
 
-# esto es solo para definir el formato correcto del file del output
+# This just builds the correct output file name.
 def output_name_from_prefix(prefix: str, suffix: str) -> str:
     path = Path(prefix)
 
@@ -327,23 +326,23 @@ def output_name_from_prefix(prefix: str, suffix: str) -> str:
 def main():
     parser = argparse.ArgumentParser()
 
-    # Los defaults salen del config (config.json o default_config.json).
-    # Cada flag arranca en None: si el usuario no la pasa, usamos el valor del
-    # config; si la pasa, esa gana.
+    # Defaults come from the config (config.json or default_config.json).
+    # Each flag starts as None: if the user doesn't pass it we use the config
+    # value; if they do, the flag wins.
     config = load_similarity_config()
 
-    parser.add_argument("folder", help="Carpeta con imágenes")
+    parser.add_argument("folder", help="Folder with images")
     # CLIP
-    # OJO: el umbral es el mínimo de similitud para considerar dos imágenes iguales
+    # NOTE: the threshold is the minimum similarity to consider two images equal.
     parser.add_argument("--clip-threshold", type=float, default=None)
 
-    # Hash perceptual
-    # max hamming distance permitida (entre menor, más parecidas)
+    # Perceptual hash
+    # Max allowed hamming distance (the lower, the more similar).
     parser.add_argument("--hash-max-distance", type=int, default=None)
     parser.add_argument("--hash-size", type=int, default=None)
 
-    # Combinación
-    # clip-weight reparte el peso entre CLIP y hash
+    # Combination
+    # clip-weight splits the weight between CLIP and hash.
     parser.add_argument("--combined-threshold", type=float, default=None)
     parser.add_argument("--clip-weight", type=float, default=None)
 
@@ -359,7 +358,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Resolvemos cada parámetro: flag de la CLI si vino, sino el config.
+    # Resolve each parameter: the CLI flag if it was passed, otherwise the config.
     clip_threshold = args.clip_threshold if args.clip_threshold is not None else config["clip_threshold"]
     hash_max_distance = args.hash_max_distance if args.hash_max_distance is not None else config["hash_max_distance"]
     hash_size = args.hash_size if args.hash_size is not None else config["hash_size"]
@@ -368,14 +367,14 @@ def main():
     batch_size = args.batch_size if args.batch_size is not None else config["batch_size"]
     chunk_size = args.chunk_size if args.chunk_size is not None else config["chunk_size"]
 
-    # vea que el peso sea una proporción válida
+    # Make sure the weight is a valid proportion.
     if not (0.0 <= clip_weight <= 1.0):
-        raise ValueError("clip_weight debe estar entre 0 y 1.")
+        raise ValueError("clip_weight must be between 0 and 1.")
 
     image_paths = load_image_paths(args.folder)
-    print(f"Encontré {len(image_paths)} imágenes.")
-    # vamos a usar la versión más reciente de CLIP, que puntualmente es bueno con
-    # similitudes de imágenes
+    print(f"Found {len(image_paths)} images.")
+    # Use the latest CLIP version, which is specifically good at image
+    # similarity.
     model = SentenceTransformer("clip-ViT-B-32")
 
     image_paths, embeddings, hashes = compute_embeddings_and_hashes_from_paths(
@@ -385,12 +384,12 @@ def main():
         hash_size=hash_size,
     )
 
-    print(f"Se pudieron procesar {len(image_paths)} imágenes.")
-    print(f"Shape de embeddings: {embeddings.shape}")
-    print(f"Se calcularon {len(hashes)} hashes perceptuales.")
+    print(f"Processed {len(image_paths)} images.")
+    print(f"Embeddings shape: {embeddings.shape}")
+    print(f"Computed {len(hashes)} perceptual hashes.")
 
     if len(image_paths) == 0:
-        print("No se pudo cargar ninguna imagen.")
+        print("Could not load any image.")
         return
 
     clip_output = args.clip_output or output_name_from_prefix(
@@ -423,9 +422,9 @@ def main():
         hash_size=hash_size,
     )
 
-    print(f"Reporte CLIP guardado en: {clip_output}")
-    print(f"Reporte hash guardado en: {hash_output}")
-    print(f"Reporte combinado guardado en: {combined_output}")
+    print(f"CLIP report saved to: {clip_output}")
+    print(f"Hash report saved to: {hash_output}")
+    print(f"Combined report saved to: {combined_output}")
 
 
 if __name__ == "__main__":
