@@ -31,9 +31,13 @@ def load_image_paths(folder: str) -> list[Path]:
     if not folder_path.exists():
         raise FileNotFoundError(f"Folder does not exist: {folder}")
     # Return every image path in that folder, lexicographically sorted.
+    # Anything under a "discarded" directory is skipped: review_dataset.py
+    # moves rejected frames into result/discarded/, so they must not be
+    # compared like the kept ones.
     return sorted(
         path for path in folder_path.rglob("*")
         if path.suffix.lower() in IMAGE_EXTENSIONS
+        and "discarded" not in path.parts
     )
 
 # The goal here is to handle every image in RGB format.
