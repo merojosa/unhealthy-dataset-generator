@@ -5,9 +5,23 @@ import numpy as np
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import argparse
+import json
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# Igual que main.py, esto busca config.json en el CWD y si no lo encuentra
+# se cae a default_config.json (que asumimos siempre presente).
+# Retorna el bloque "duplicate_images_removal".
+def load_similarity_config() -> dict:
+    try:
+        with open("config.json") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        with open("default_config.json") as f:
+            config = json.load(f)
+
+    return config["duplicate_images_removal"]
 
 # Esto se mete recursivamente en el folder, y retorna
 # una lista ordenada de rutas de imágenes con alguna extensión válida
@@ -313,20 +327,25 @@ def output_name_from_prefix(prefix: str, suffix: str) -> str:
 def main():
     parser = argparse.ArgumentParser()
 
+    # Los defaults salen del config (config.json o default_config.json).
+    # Cada flag arranca en None: si el usuario no la pasa, usamos el valor del
+    # config; si la pasa, esa gana.
+    config = load_similarity_config()
+
     parser.add_argument("folder", help="Carpeta con imágenes")
     # CLIP
-    # OJO: el default es el min umbral de similitud
-    parser.add_argument("--clip-threshold", type=float, default=0.95)
+    # OJO: el umbral es el mínimo de similitud para considerar dos imágenes iguales
+    parser.add_argument("--clip-threshold", type=float, default=None)
 
     # Hash perceptual
-    # en este caso la max hamming distance permitida va a ser 5
-    parser.add_argument("--hash-max-distance", type=int, default=5)
-    parser.add_argument("--hash-size", type=int, default=8)
+    # max hamming distance permitida (entre menor, más parecidas)
+    parser.add_argument("--hash-max-distance", type=int, default=None)
+    parser.add_argument("--hash-size", type=int, default=None)
 
     # Combinación
-    # por ahora le da 70% peso a CLIP, 30% a hash
-    parser.add_argument("--combined-threshold", type=float, default=0.94)
-    parser.add_argument("--clip-weight", type=float, default=0.70)
+    # clip-weight reparte el peso entre CLIP y hash
+    parser.add_argument("--combined-threshold", type=float, default=None)
+    parser.add_argument("--clip-weight", type=float, default=None)
 
     # Outputs
     parser.add_argument("--output-prefix", default="similarity_report")
@@ -335,13 +354,23 @@ def main():
     parser.add_argument("--combined-output", default=None)
 
     # Performance
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--chunk-size", type=int, default=512)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--chunk-size", type=int, default=None)
 
     args = parser.parse_args()
+
+    # Resolvemos cada parámetro: flag de la CLI si vino, sino el config.
+    clip_threshold = args.clip_threshold if args.clip_threshold is not None else config["clip_threshold"]
+    hash_max_distance = args.hash_max_distance if args.hash_max_distance is not None else config["hash_max_distance"]
+    hash_size = args.hash_size if args.hash_size is not None else config["hash_size"]
+    combined_threshold = args.combined_threshold if args.combined_threshold is not None else config["combined_threshold"]
+    clip_weight = args.clip_weight if args.clip_weight is not None else config["clip_weight"]
+    batch_size = args.batch_size if args.batch_size is not None else config["batch_size"]
+    chunk_size = args.chunk_size if args.chunk_size is not None else config["chunk_size"]
+
     # vea que el peso sea una proporción válida
-    if not (0.0 <= args.clip_weight <= 1.0):
-        raise ValueError("--clip-weight debe estar entre 0 y 1.")
+    if not (0.0 <= clip_weight <= 1.0):
+        raise ValueError("clip_weight debe estar entre 0 y 1.")
 
     image_paths = load_image_paths(args.folder)
     print(f"Encontré {len(image_paths)} imágenes.")
@@ -352,8 +381,8 @@ def main():
     image_paths, embeddings, hashes = compute_embeddings_and_hashes_from_paths(
         model,
         image_paths,
-        batch_size=args.batch_size,
-        hash_size=args.hash_size,
+        batch_size=batch_size,
+        hash_size=hash_size,
     )
 
     print(f"Se pudieron procesar {len(image_paths)} imágenes.")
@@ -383,15 +412,15 @@ def main():
         image_paths=image_paths,
         embeddings=embeddings,
         hashes=hashes,
-        clip_threshold=args.clip_threshold,
-        hash_max_distance=args.hash_max_distance,
-        combined_threshold=args.combined_threshold,
-        clip_weight=args.clip_weight,
+        clip_threshold=clip_threshold,
+        hash_max_distance=hash_max_distance,
+        combined_threshold=combined_threshold,
+        clip_weight=clip_weight,
         clip_output=clip_output,
         hash_output=hash_output,
         combined_output=combined_output,
-        chunk_size=args.chunk_size,
-        hash_size=args.hash_size,
+        chunk_size=chunk_size,
+        hash_size=hash_size,
     )
 
     print(f"Reporte CLIP guardado en: {clip_output}")
