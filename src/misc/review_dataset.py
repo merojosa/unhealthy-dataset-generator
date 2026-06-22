@@ -511,6 +511,13 @@ class ReviewApp(tk.Tk):
             return
 
         mode = self.mode.get()
+        # Remember the current batch so we don't skip a batch that shifts into
+        # this index when the current batch empties out (all images discarded).
+        current_key = (self.ad_keys[self.current_batch_idx]
+                       if mode == "ad" and self.ad_keys
+                       and 0 <= self.current_batch_idx < len(self.ad_keys)
+                       else None)
+
         dest_dir = self.discard_ad_dir if mode == "ad" else self.discard_non_ad_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -531,7 +538,16 @@ class ReviewApp(tk.Tk):
 
         self.selected.clear()
         self._reload_data_soft()
-        self.navigate(1)
+
+        # If the current batch was fully discarded its key is gone, and the next
+        # batch already occupies this index — refresh in place rather than
+        # advancing, which would skip that batch.
+        if mode == "ad" and current_key is not None and current_key not in self.ad_keys:
+            self._populate_sidebar()
+            self._show_current()
+            self._save_progress()
+        else:
+            self.navigate(1)
 
     def _reload_data_soft(self):
         """Rescan directories without resetting navigation position."""
