@@ -7,13 +7,14 @@
   "non_ad_ratio": 1.0,
   "non_ad_gap_seconds": 30,
   "duplicate_images_removal": {
-    "clip_threshold": 0.95,
-    "hash_max_distance": 5,
     "hash_size": 8,
     "combined_threshold": 0.94,
     "clip_weight": 0.70,
     "batch_size": 32,
     "chunk_size": 512
+  },
+  "rebalance": {
+    "target_ratio": 1.0
   },
   "tv_channels_mapping": {
     "1": "DN",

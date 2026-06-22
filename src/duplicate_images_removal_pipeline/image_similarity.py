@@ -6,22 +6,30 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import argparse
 import json
+import shutil
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
+# Subfolders under result/ that hold frames already pulled out of the dataset.
+# They must never be scanned (we don't want to compare against, or move, frames
+# that were already discarded or marked duplicate in a previous run).
+EXCLUDED_DIRS = {"discarded", "duplicates"}
+
 # Same as main.py: look for config.json in the CWD and, if it isn't there,
 # fall back to default_config.json (assumed to always be present).
-# Returns the "duplicate_images_removal" block.
-def load_similarity_config() -> dict:
+# Returns the whole config dict.
+def load_config() -> dict:
     try:
         with open("config.json") as f:
-            config = json.load(f)
+            return json.load(f)
     except FileNotFoundError:
         with open("default_config.json") as f:
-            config = json.load(f)
+            return json.load(f)
 
-    return config["duplicate_images_removal"]
+# Convenience accessor for the "duplicate_images_removal" block.
+def load_similarity_config() -> dict:
+    return load_config()["duplicate_images_removal"]
 
 # Recurse into the folder and return a lexicographically sorted list of
 # image paths whose extension is a valid one.
@@ -31,13 +39,13 @@ def load_image_paths(folder: str) -> list[Path]:
     if not folder_path.exists():
         raise FileNotFoundError(f"Folder does not exist: {folder}")
     # Return every image path in that folder, lexicographically sorted.
-    # Anything under a "discarded" directory is skipped: review_dataset.py
-    # moves rejected frames into result/discarded/, so they must not be
-    # compared like the kept ones.
+    # Anything under a "discarded" or "duplicates" directory is skipped:
+    # those frames were already pulled out of the active dataset, so they must
+    # not be compared against (or moved like) the kept ones.
     return sorted(
         path for path in folder_path.rglob("*")
         if path.suffix.lower() in IMAGE_EXTENSIONS
-        and "discarded" not in path.parts
+        and not EXCLUDED_DIRS.intersection(path.parts)
     )
 
 # The goal here is to handle every image in RGB format.
@@ -146,234 +154,220 @@ def compute_embeddings_and_hashes_from_paths(
 
     return valid_paths, np.vstack(all_embeddings), all_hashes
 
-# This just appends results to a csv.
-# On the first write a header is added, otherwise it isn't.
-def append_rows_to_csv(
-    rows: list[dict],
-    columns: list[str],
-    output: str,
-    first_write: bool,
-) -> bool:
 
-    if not rows:
-        return first_write
+# Union-Find / disjoint set. Used to fold the pairwise "these two are
+# duplicates" relations into connected groups: if A~B and B~C we want
+# {A, B, C} in one group even when A and C weren't compared as equal.
+class UnionFind:
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+        self.rank = [0] * n
 
-    output_path = Path(output)
+    def find(self, x: int) -> int:
+        root = x
+        while self.parent[root] != root:
+            root = self.parent[root]
+        # Path compression so repeated finds stay near O(1).
+        while self.parent[x] != root:
+            self.parent[x], x = root, self.parent[x]
+        return root
 
-    if output_path.parent != Path("."):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    def union(self, a: int, b: int) -> None:
+        root_a, root_b = self.find(a), self.find(b)
+        if root_a == root_b:
+            return
+        if self.rank[root_a] < self.rank[root_b]:
+            root_a, root_b = root_b, root_a
+        self.parent[root_b] = root_a
+        if self.rank[root_a] == self.rank[root_b]:
+            self.rank[root_a] += 1
 
-    df = pd.DataFrame(rows, columns=columns)
+    # Return {representative_index: [member indices]} for every group, in a
+    # deterministic order. Members keep their original (sorted) order.
+    def groups(self) -> dict[int, list[int]]:
+        result: dict[int, list[int]] = {}
+        for i in range(len(self.parent)):
+            result.setdefault(self.find(i), []).append(i)
+        return result
 
-    df.to_csv(
-        output,
-        mode="w" if first_write else "a",
-        header=first_write,
-        index=False,
-    )
 
-    return False
-
-# This just creates an empty csv in case nothing matches the expected
-# similarity.
-def create_empty_csv(output: str, columns: list[str]) -> None:
-    output_path = Path(output)
-
-    if output_path.parent != Path("."):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    pd.DataFrame(columns=columns).to_csv(output, index=False)
-
-# This compares each image against all the ones that come after it.
-def find_similar_pairs_three_methods_chunked(
-    image_paths: list[Path],
+# Compares each image against all the ones that come after it and unions any
+# pair whose *combined* score (CLIP cosine + perceptual-hash similarity, mixed
+# by clip_weight) reaches combined_threshold. The chunked matmul keeps the
+# CLIP similarity computation vectorized while the union-find accumulates the
+# duplicate groups without ever materializing the full O(n^2) pair list.
+def find_duplicate_groups(
     embeddings: np.ndarray,
     hashes: list[int],
-    clip_threshold: float,
-    hash_max_distance: int,
     combined_threshold: float,
     clip_weight: float,
-    clip_output: str,
-    hash_output: str,
-    combined_output: str,
     chunk_size: int = 512,
     hash_size: int = 8,
-) -> None:
+) -> dict[int, list[int]]:
 
-    n = len(image_paths)
+    n = len(hashes)
     hash_bits = hash_size * hash_size
-    # There will be three comparisons: CLIP, HASH, and the combined one.
-
-    clip_columns = [
-        "image_1",
-        "image_2",
-        "similarity",
-        "equal",
-    ]
-
-    hash_columns = [
-        "image_1",
-        "image_2",
-        "hash_distance",
-        "hash_similarity",
-        "equal",
-    ]
-
-    combined_columns = [
-        "image_1",
-        "image_2",
-        "clip_similarity",
-        "hash_distance",
-        "hash_similarity",
-        "combined_score",
-        "equal",
-    ]
-
-    first_clip_write = True
-    first_hash_write = True
-    first_combined_write = True
+    union_find = UnionFind(n)
 
     for start in tqdm(range(0, n, chunk_size), desc="Comparing images"):
         end = min(start + chunk_size, n)
 
-        # Since the embeddings are normalized, the dot product is the cosine similarity.
+        # Since the embeddings are normalized, the dot product is the cosine
+        # similarity.
         sim_block = embeddings[start:end] @ embeddings.T
-
-        clip_rows = []
-        hash_rows = []
-        combined_rows = []
 
         for local_i in range(end - start):
             i = start + local_i
 
-            # Only check j > i so we don't repeat pairs or compare an image with itself.
+            # Only check j > i so we don't repeat pairs or compare an image
+            # with itself.
             for j in range(i + 1, n):
                 clip_similarity = float(sim_block[local_i, j])
 
                 distance = hamming_distance(hashes[i], hashes[j])
                 hash_similarity = 1.0 - (distance / hash_bits)
-                # The combined score.
+
                 combined_score = (
                     clip_weight * clip_similarity
                     + (1.0 - clip_weight) * hash_similarity
                 )
 
-                if clip_similarity >= clip_threshold:
-                    clip_rows.append({
-                        "image_1": str(image_paths[i]),
-                        "image_2": str(image_paths[j]),
-                        "similarity": clip_similarity,
-                        "equal": True,
-                    })
-
-                if distance <= hash_max_distance:
-                    hash_rows.append({
-                        "image_1": str(image_paths[i]),
-                        "image_2": str(image_paths[j]),
-                        "hash_distance": distance,
-                        "hash_similarity": hash_similarity,
-                        "equal": True,
-                    })
-
                 if combined_score >= combined_threshold:
-                    combined_rows.append({
-                        "image_1": str(image_paths[i]),
-                        "image_2": str(image_paths[j]),
-                        "clip_similarity": clip_similarity,
-                        "hash_distance": distance,
-                        "hash_similarity": hash_similarity,
-                        "combined_score": combined_score,
-                        "equal": True,
-                    })
+                    union_find.union(i, j)
 
-        first_clip_write = append_rows_to_csv(
-            clip_rows,
-            clip_columns,
-            clip_output,
-            first_clip_write,
-        )
+    return union_find.groups()
 
-        first_hash_write = append_rows_to_csv(
-            hash_rows,
-            hash_columns,
-            hash_output,
-            first_hash_write,
-        )
 
-        first_combined_write = append_rows_to_csv(
-            combined_rows,
-            combined_columns,
-            combined_output,
-            first_combined_write,
-        )
-    # first_clip_write stays True iff nothing was appended.
-    # Same for the others.
-    if first_clip_write:
-        create_empty_csv(clip_output, clip_columns)
+# Given the duplicate groups, keep the lexicographically-first image of each
+# group (the dataset's natural ordering) and move every other member into
+# duplicates_dir, preserving its path relative to the scanned folder so a frame
+# at result/ad/x.jpg lands at result/duplicates/ad/x.jpg.
+#
+# Returns the list of (moved_from, moved_to, kept) tuples (relative paths).
+def move_duplicates(
+    image_paths: list[Path],
+    groups: dict[int, list[int]],
+    folder: Path,
+    duplicates_dir: Path,
+    dry_run: bool,
+) -> list[tuple[Path, Path, Path]]:
 
-    if first_hash_write:
-        create_empty_csv(hash_output, hash_columns)
+    moves: list[tuple[Path, Path, Path]] = []
 
-    if first_combined_write:
-        create_empty_csv(combined_output, combined_columns)
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        # Keep the smallest path; move the rest. members already follow the
+        # sorted order of image_paths, so members[0] is the keeper.
+        keeper = image_paths[members[0]]
 
-# This just builds the correct output file name.
-def output_name_from_prefix(prefix: str, suffix: str) -> str:
-    path = Path(prefix)
+        for idx in members[1:]:
+            source = image_paths[idx]
+            relative = source.relative_to(folder)
+            destination = duplicates_dir / relative
 
-    if path.suffix == ".csv":
-        path = path.with_suffix("")
+            if not dry_run:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                # If a previous run already moved this exact frame, just drop
+                # the stray copy instead of crashing on an existing target.
+                # missing_ok guards the case where the source is also gone
+                # (e.g. a prior run already moved it and left nothing behind).
+                if destination.exists():
+                    source.unlink(missing_ok=True)
+                elif source.exists():
+                    shutil.move(str(source), str(destination))
+                else:
+                    # Nothing to move: the frame is already at its destination
+                    # or vanished between scanning and moving. Skip it.
+                    continue
 
-    return str(path.with_name(path.name + suffix))
+            moves.append((relative, destination, keeper))
+
+    return moves
+
+
+# Small manifest so the moves are auditable and reversible. Lives inside the
+# duplicates folder (it is not the old similarity "report" — it only records
+# what was physically moved and which frame was kept in its place).
+def write_manifest(moves: list[tuple[Path, Path, Path]], duplicates_dir: Path) -> Path:
+    manifest_path = duplicates_dir / "duplicates_manifest.csv"
+    duplicates_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = [
+        {
+            "moved_to": str(moved_to),
+            "original_path": str(moved_from),
+            "kept": str(kept),
+        }
+        for moved_from, moved_to, kept in moves
+    ]
+
+    pd.DataFrame(
+        rows,
+        columns=["moved_to", "original_path", "kept"],
+    ).to_csv(manifest_path, index=False)
+
+    return manifest_path
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Move duplicate frames out of the dataset into result/duplicates/."
+    )
+
+    config = load_config()
+    similarity_config = config["duplicate_images_removal"]
+    # Default folder to scan: {dataset}/result, where the pipeline writes
+    # ad/ and non_ad/. Override by passing a folder explicitly.
+    default_folder = str(Path(config["path"]["dataset"]) / "result")
 
     # Defaults come from the config (config.json or default_config.json).
     # Each flag starts as None: if the user doesn't pass it we use the config
     # value; if they do, the flag wins.
-    config = load_similarity_config()
+    parser.add_argument(
+        "folder",
+        nargs="?",
+        default=default_folder,
+        help=f"Folder with images (default: {default_folder})",
+    )
+    parser.add_argument(
+        "--duplicates-dir",
+        default=None,
+        help="Where to move duplicates (default: <folder>/duplicates).",
+    )
 
-    parser.add_argument("folder", help="Folder with images")
-    # CLIP
-    # NOTE: the threshold is the minimum similarity to consider two images equal.
-    parser.add_argument("--clip-threshold", type=float, default=None)
-
-    # Perceptual hash
-    # Max allowed hamming distance (the lower, the more similar).
-    parser.add_argument("--hash-max-distance", type=int, default=None)
-    parser.add_argument("--hash-size", type=int, default=None)
-
-    # Combination
+    # Combination — this is what decides duplicates now.
     # clip-weight splits the weight between CLIP and hash.
     parser.add_argument("--combined-threshold", type=float, default=None)
     parser.add_argument("--clip-weight", type=float, default=None)
-
-    # Outputs
-    parser.add_argument("--output-prefix", default="similarity_report")
-    parser.add_argument("--clip-output", default=None)
-    parser.add_argument("--hash-output", default=None)
-    parser.add_argument("--combined-output", default=None)
+    parser.add_argument("--hash-size", type=int, default=None)
 
     # Performance
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--chunk-size", type=int, default=None)
 
+    # Preview without touching any files.
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be moved without moving anything.",
+    )
+
     args = parser.parse_args()
 
     # Resolve each parameter: the CLI flag if it was passed, otherwise the config.
-    clip_threshold = args.clip_threshold if args.clip_threshold is not None else config["clip_threshold"]
-    hash_max_distance = args.hash_max_distance if args.hash_max_distance is not None else config["hash_max_distance"]
-    hash_size = args.hash_size if args.hash_size is not None else config["hash_size"]
-    combined_threshold = args.combined_threshold if args.combined_threshold is not None else config["combined_threshold"]
-    clip_weight = args.clip_weight if args.clip_weight is not None else config["clip_weight"]
-    batch_size = args.batch_size if args.batch_size is not None else config["batch_size"]
-    chunk_size = args.chunk_size if args.chunk_size is not None else config["chunk_size"]
+    combined_threshold = args.combined_threshold if args.combined_threshold is not None else similarity_config["combined_threshold"]
+    clip_weight = args.clip_weight if args.clip_weight is not None else similarity_config["clip_weight"]
+    hash_size = args.hash_size if args.hash_size is not None else similarity_config["hash_size"]
+    batch_size = args.batch_size if args.batch_size is not None else similarity_config["batch_size"]
+    chunk_size = args.chunk_size if args.chunk_size is not None else similarity_config["chunk_size"]
 
     # Make sure the weight is a valid proportion.
     if not (0.0 <= clip_weight <= 1.0):
         raise ValueError("clip_weight must be between 0 and 1.")
+
+    folder = Path(args.folder)
+    duplicates_dir = Path(args.duplicates_dir) if args.duplicates_dir else folder / "duplicates"
 
     image_paths = load_image_paths(args.folder)
     print(f"Found {len(image_paths)} images.")
@@ -396,39 +390,42 @@ def main():
         print("Could not load any image.")
         return
 
-    clip_output = args.clip_output or output_name_from_prefix(
-        args.output_prefix,
-        "_clip.csv",
-    )
-
-    hash_output = args.hash_output or output_name_from_prefix(
-        args.output_prefix,
-        "_hash.csv",
-    )
-
-    combined_output = args.combined_output or output_name_from_prefix(
-        args.output_prefix,
-        "_combined.csv",
-    )
-
-    find_similar_pairs_three_methods_chunked(
-        image_paths=image_paths,
+    groups = find_duplicate_groups(
         embeddings=embeddings,
         hashes=hashes,
-        clip_threshold=clip_threshold,
-        hash_max_distance=hash_max_distance,
         combined_threshold=combined_threshold,
         clip_weight=clip_weight,
-        clip_output=clip_output,
-        hash_output=hash_output,
-        combined_output=combined_output,
         chunk_size=chunk_size,
         hash_size=hash_size,
     )
 
-    print(f"CLIP report saved to: {clip_output}")
-    print(f"Hash report saved to: {hash_output}")
-    print(f"Combined report saved to: {combined_output}")
+    moves = move_duplicates(
+        image_paths=image_paths,
+        groups=groups,
+        folder=folder,
+        duplicates_dir=duplicates_dir,
+        dry_run=args.dry_run,
+    )
+
+    duplicate_groups = sum(1 for members in groups.values() if len(members) > 1)
+    kept = len(image_paths) - len(moves)
+
+    if args.dry_run:
+        print(f"\n[DRY RUN] Would move {len(moves)} duplicate(s) from "
+              f"{duplicate_groups} group(s) into {duplicates_dir}.")
+        for moved_from, _, kept_path in moves[:20]:
+            print(f"  {moved_from}  ->  duplicate of  {kept_path}")
+        if len(moves) > 20:
+            print(f"  ... and {len(moves) - 20} more.")
+        print(f"{kept} unique image(s) would remain.")
+        return
+
+    manifest_path = write_manifest(moves, duplicates_dir)
+
+    print(f"\nMoved {len(moves)} duplicate(s) from {duplicate_groups} group(s) "
+          f"into {duplicates_dir}.")
+    print(f"{kept} unique image(s) remain in {folder}.")
+    print(f"Manifest written to: {manifest_path}")
 
 
 if __name__ == "__main__":

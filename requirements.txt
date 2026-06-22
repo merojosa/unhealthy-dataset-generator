@@ -7,3 +7,12 @@ opencv-python==4.10.0.84
 # required (Python 3.14 example):
 #   pip install https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.10.0-tesseract-5.5.2/tesserocr-2.10.0-cp314-cp314-win_amd64.whl
 tesserocr==2.10.0
+
+# Duplicate-image-removal pipeline (src/duplicate_images_removal_pipeline).
+# CLIP embeddings come from sentence-transformers, which pulls in torch.
+# NOTE: on Windows, plain `pip install torch` installs the CPU-only wheel. To
+# use the GPU (e.g. the RTX 2060 SUPER), install the matching CUDA build FIRST,
+# before this file, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+sentence-transformers>=3.0.0
+torch>=2.6.0
