@@ -44,6 +44,8 @@ source ./unhealthy-dataset-generator-env/bin/activate
 
   On **macOS / Linux**, `pip install -r requirements.txt` builds `tesserocr` from source against the Tesseract dev headers installed in the previous step.
 
+  The duplicate-removal pipeline (see [Utility scripts](#utility-scripts)) also installs `sentence-transformers` and `torch` for CLIP embeddings; the CLIP model is downloaded automatically on first use. The core generator does not need them. On **Windows**, `pip install torch` installs the CPU-only build — if you want to use a GPU, install the matching CUDA wheel **before** `pip install -r requirements.txt`, e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
+
 - Execute the script: `python -m src.dataset_generator_pipeline.main` (run from the repo root — paths in the config are resolved relative to the current working directory)
 
 ## Instructions
@@ -56,6 +58,8 @@ source ./unhealthy-dataset-generator-env/bin/activate
   - `non_ad_gap_seconds`: int (default `30`). Seconds before and after each ad window that are also excluded when selecting non-ad frame candidates, to avoid borderline content.
   - `tv_channels_mapping`: maps the first character of the `can` column to a filename suffix. For example, `"1" → "DN"` means a row with `can` starting with `1` reads `{date}_DN_processed.mp4`. Add one entry per channel.
   - `videos_metadata`: one entry per video file. `start_time` (`HH:MM:SS`) is the wall-clock time the recording begins — the pipeline subtracts this from the ad's `hin`/`hfi` times to find the frame offset inside the video. `crop` (`top`/`bottom`/`left`/`right`, in pixels) trims each extracted frame; it is optional and can be omitted if no crop is needed (use `test_custom_crop_params.py` to find the right values).
+  - `duplicate_images_removal`: defaults for the duplicate-removal script — `combined_threshold` (the score at/above which two frames are treated as duplicates), `clip_weight` (how much weight the combined score gives CLIP similarity vs. the perceptual hash, 0–1), `hash_size`, `batch_size`, and `chunk_size`. Each can be overridden per run with a command-line flag.
+  - `rebalance.target_ratio`: float (default `1.0`). The desired `non_ad : ad` ratio the rebalance script trims toward.
 - To check a particular video, you should populate `metadata.xlsx` with the data related to the video. For example, if you want to test `2024-04-06_DN.mp4`, you should filter "can" to 1 and "fec" to 06-04-24.
 - The output of the script will be on `path/result`. Every image has the following structure: video name where the it was extracted + id from `metadata.xlsx`("cod" column) + counter id + .jpg.
 
@@ -70,6 +74,8 @@ source ./unhealthy-dataset-generator-env/bin/activate
     discarded/         # created by review_dataset.py, never wiped automatically
       ad/
       non_ad/
+    duplicates/        # created by image_similarity.py (+ duplicates_manifest.csv)
+    excess/            # created by rebalance.py (+ rebalance_manifest.csv)
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
@@ -95,3 +101,23 @@ python src/misc/review_dataset.py
 ```
 
 It lets you browse ad frames (grouped by ad) and non-ad frames, select bad images, and move them to a `result/discarded/` folder. Discarded images are not deleted and can be restored.
+
+### Removing duplicate frames (`src/duplicate_images_removal_pipeline/image_similarity.py`)
+
+Extracting one frame per second produces many near-identical frames. This script finds visually similar frames — using a combination of CLIP embeddings and a perceptual hash — groups them, keeps one frame per group, and moves the rest to `result/duplicates/`. Run it from the repo root:
+
+```
+python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run]
+```
+
+It scans `{path.dataset}/result` by default. Pass `--dry-run` to preview what would be moved without touching any files. The thresholds come from the `duplicate_images_removal` config block and can be overridden per run (`--combined-threshold`, `--clip-weight`, `--hash-size`, `--batch-size`, `--chunk-size`). Moved frames keep their relative path under `result/duplicates/` and are recorded in `duplicates_manifest.csv`, so the operation is reversible.
+
+### Rebalancing the classes (`src/rebalance_pipeline/rebalance.py`)
+
+After reviewing and de-duplicating, the `ad` and `non_ad` counts may no longer match. This script trims the larger class (it never duplicates the smaller one) to reach the desired `non_ad : ad` ratio, keeping frames evenly spread across the sequence and moving the surplus to `result/excess/`. Run it from the repo root:
+
+```
+python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N]
+```
+
+It operates on `{path.dataset}/result` by default and uses `rebalance.target_ratio` from the config unless `--target-ratio` is given. As with the other tools, frames are moved (recorded in `rebalance_manifest.csv`), not deleted.
