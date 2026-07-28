@@ -4,18 +4,26 @@ import sys
 from pathlib import Path
 
 
-def check_folder(path: str, repo_root: Path) -> int:
+def check_folder(path_str: str, repo_root: Path) -> int:
     """Return 0 if valid, non-zero exit code on error.
 
     Checks that `path` exists and contains `ad` and `non_ad` subfolders.
     """
-    if not os.path.isdir(path):
-        print(f"Error: folder '{path}' does not exist or is not a directory.", file=sys.stderr)
+    if not os.path.isdir(path_str):
+        print(f"Error: folder '{path_str}' does not exist or is not a directory.", file=sys.stderr)
         return 2
+
+    path = Path(path_str)
+
+    if not os.path.isdir(path / "result"):
+        print(f"Error: folder '{path}' does not contain a 'result' subfolder.", file=sys.stderr)
+        return 3
+
+    result_dir = path / "result"
 
     missing = []
     for sub in ("ad", "non_ad"):
-        if not os.path.isdir(os.path.join(path, sub)):
+        if not os.path.isdir(os.path.join(result_dir, sub)):
             missing.append(sub)
 
     if missing:
@@ -23,12 +31,12 @@ def check_folder(path: str, repo_root: Path) -> int:
         return 3
 
     # check for metadata.xlsx at project root
-    metadata_path = repo_root / "metadata.xlsx"
+    metadata_path = path / "metadata.xlsx"
     if not metadata_path.is_file():
         print(f"Error: metadata.xlsx not found at project root: {metadata_path}", file=sys.stderr)
         return 4
 
-    print(f"OK: found both 'ad' and 'non_ad' in '{path}' and metadata.xlsx at '{metadata_path}'")
+    print(f"OK: found both 'result/ad' and 'result/non_ad' in '{path}' and metadata.xlsx at '{metadata_path}'")
     return 0
 
 
@@ -44,7 +52,7 @@ def main() -> None:
         "folder",
         nargs="?",
         default=default_folder,
-        help=f"Path to folder containing 'ad' and 'non_ad' (default: {default_folder})",
+        help=f"Path to folder containing the dataset (default: {default_folder})",
     )
     args = parser.parse_args()
 
@@ -55,9 +63,9 @@ def main() -> None:
     # proceed to generate CSV mapping images to marketing strategies
     from .generator import generate_csv
 
-    ad_dir = Path(args.folder) / "ad"
-    metadata_path = Path(repo_root) / "metadata.xlsx"
-    output_csv = Path(repo_root) / "marketing_multilabel_dataset.csv"
+    ad_dir = Path(args.folder) / "result" / "ad"
+    metadata_path = Path(args.folder) / "metadata.xlsx"
+    output_csv = Path(args.folder) / "result" / "marketing_multilabel_dataset.csv"
 
     gen_rc = generate_csv(ad_dir, metadata_path, output_csv)
     sys.exit(gen_rc)
