@@ -68,14 +68,15 @@ source ./unhealthy-dataset-generator-env/bin/activate
 ```
 {path.dataset}/
   metadata.xlsx
-  result/              # created by the pipeline, wiped on each run
+  result/                   # created by the pipeline, wiped on each run
     ad/
     non_ad/
-    discarded/         # created by review_dataset.py, never wiped automatically
+    discarded/              # created by review_dataset.py, never wiped automatically
       ad/
       non_ad/
-    duplicates/        # created by image_similarity.py (+ duplicates_manifest.csv)
-    excess/            # created by rebalance.py (+ rebalance_manifest.csv)
+    duplicates/             # created by image_similarity.py (+ duplicates_manifest.csv)
+    excess/                 # created by rebalance.py (+ rebalance_manifest.csv)
+    multilabel_dataset.csv  # created by multilabel_dataset_generator/main.py
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
@@ -121,3 +122,32 @@ python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio 
 ```
 
 It operates on `{path.dataset}/result` by default and uses `rebalance.target_ratio` from the config unless `--target-ratio` is given. As with the other tools, frames are moved (recorded in `rebalance_manifest.csv`), not deleted.
+
+### Generating a multilabel dataset (`src/multilabel_dataset_generator/main.py`)
+
+This script builds a multilabel CSV by reading the ad images already extracted by the main generator and joining them with the metadata workbook. It is meant to run after the binary dataset has been produced.
+
+Run it from the repository root:
+
+```
+python -m src.multilabel_dataset_generator.main [path/to/dataset_root]
+```
+
+The script expects a dataset directory that contains the extracted image folders:
+
+- `/datasets/result/ad`
+- `/datasets/result/non_ad`
+
+In practice, pass the parent folder that contains those directories (for example, `/datasets/result`), not the individual `ad` or `non_ad` folders.
+
+Required input files:
+
+- `metadata.xlsx` at the repository root
+- The extracted `.jpg` files under the `ad` folder (the script uses those to build the labels)
+
+Generated output:
+
+- `marketing_multilabel_dataset.csv` at the repository root, with one row per ad image and metadata columns copied from the Excel file
+- The original `.jpg` files remain in place under the existing `ad`/`non_ad` folders; the script does not move or rewrite them
+
+If you do not pass a path, the script defaults to the repository's `dataset` folder.
