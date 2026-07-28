@@ -61,7 +61,11 @@ def main() -> None:
         sys.exit(rc)
 
     # proceed to generate CSV mapping images to marketing strategies
-    from .generator import generate_csv
+    try:
+        from .generator import generate_csv
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from generator import generate_csv
 
     ad_dir = Path(args.folder) / "result" / "ad"
     metadata_path = Path(args.folder) / "metadata.xlsx"
