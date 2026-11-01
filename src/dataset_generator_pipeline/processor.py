@@ -169,7 +169,7 @@ def extract_frames(
 
     The function keeps `video_capture`, `fps`, `total_frames`, and
     `previous_video_path` as module-level globals so consecutive rows from
-    the same video reuse the open VideoCapture (see CLAUDE.md).
+    the same video reuse the open VideoCapture (see .github/copilot-instructions.md).
     """
     global previous_video_path, video_capture, fps, total_frames
     os.makedirs(output_dir, exist_ok=True)
@@ -199,7 +199,7 @@ def extract_frames(
     # Phase 1 — boundary OCR. See the docstring for the rationale. For a
     # single-sample window we only need one OCR call. The per-frame OCR
     # branch in phase 2 keeps the original "OCR=None means keep the frame"
-    # semantic from CLAUDE.md, so a video whose overlay was cropped out
+    # semantic from .github/copilot-instructions.md, so a video whose overlay was cropped out
     # behaves the same as before.
     first_time = _ocr_frame_at(start_frame, custom_crop, cod, "boundary-first")
     last_time = (

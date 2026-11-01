@@ -133,21 +133,28 @@ Run it from the repository root:
 python -m src.multilabel_dataset_generator.main [path/to/dataset_root]
 ```
 
-The script expects a dataset directory that contains the extracted image folders:
+Pass the dataset root (the same folder as `path.dataset`), not the `result` folder or the individual `ad`/`non_ad` folders. If you do not pass a path, the script defaults to the repository's `dataset` folder. The dataset root must contain:
 
-- `/datasets/result/ad`
-- `/datasets/result/non_ad`
+```
+{dataset}/
+  metadata.xlsx
+  result/
+    ad/        # extracted ad frames, used to build the labels
+    non_ad/    # must exist, but is not read
+```
 
-In practice, pass the parent folder that contains those directories (for example, `/datasets/result`), not the individual `ad` or `non_ad` folders.
+Requirements for the inputs:
 
-Required input files:
-
-- `metadata.xlsx` at the repository root
-- The extracted `.jpg` files under the `ad` folder (the script uses those to build the labels)
+- `metadata.xlsx` is read from the `Base combinada` sheet if present, otherwise the first sheet. It must have a `cod` column and the label columns `rpr` through `rie` (in that order).
+- Ad frame filenames must match `*_<cod>_<n>.jpg`, where `<cod>` is 5 digits. Frames that do not match, or whose `cod` is not in the workbook, are skipped.
 
 Generated output:
 
-- `marketing_multilabel_dataset.csv` at the repository root, with one row per ad image and metadata columns copied from the Excel file
-- The original `.jpg` files remain in place under the existing `ad`/`non_ad` folders; the script does not move or rewrite them
+- `{dataset}/result/marketing_multilabel_dataset.csv`, with an `image_name` column and the `rpr`–`rie` columns copied from the matching metadata row (one row per ad image)
+- The original `.jpg` files remain in place; the script does not move or rewrite them
 
-If you do not pass a path, the script defaults to the repository's `dataset` folder.
+To sanity-check the CSV against the images on disk, pass both paths explicitly (the defaults do not match the generator's output location):
+
+```
+python -m src.multilabel_dataset_generator.check_dataset path/to/dataset_root/result/marketing_multilabel_dataset.csv path/to/dataset_root/result
+```
