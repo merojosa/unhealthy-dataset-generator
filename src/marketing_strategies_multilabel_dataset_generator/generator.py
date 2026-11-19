@@ -1,22 +1,30 @@
 import os
 import re
+import shutil
 from pathlib import Path
-import pandas as pd
 from typing import Union
 
+import pandas as pd
 
-def generate_csv(ad_images_dir: Union[str, Path], metadata_path: Union[str, Path], output_csv: Union[str, Path]) -> int:
-    """Generate a CSV mapping ad image filenames to marketing strategy columns from the Excel file.
+CSV_NAME = "marketing_multilabel_dataset.csv"
+IMAGES_DIR = "images"
 
-    - `ad_images_dir`: folder containing ad images (jpg)
+
+def generate_dataset(ad_images_dir: Union[str, Path], metadata_path: Union[str, Path], output_dir: Union[str, Path]) -> int:
+    """Build a self-contained multilabel dataset from the binary dataset's ad frames.
+
+    - `ad_images_dir`: folder containing ad images (jpg), e.g. `{binary}/result/ad`
     - `metadata_path`: path to metadata.xlsx
-    - `output_csv`: path where CSV will be written
+    - `output_dir`: dataset root to write; gets `images/` (copies of every labelled
+      ad frame, wiped on each run) and `marketing_multilabel_dataset.csv`
 
-    Returns 0 on success, non-zero on error.
+    Source images are only copied, never moved. Returns 0 on success, non-zero on error.
     """
     ad_images_dir = Path(ad_images_dir)
     metadata_path = Path(metadata_path)
-    output_csv = Path(output_csv)
+    output_dir = Path(output_dir)
+    images_out = output_dir / IMAGES_DIR
+    output_csv = output_dir / CSV_NAME
 
     if not metadata_path.is_file():
         print(f"Error: metadata file not found: {metadata_path}")
@@ -90,12 +98,22 @@ def generate_csv(ad_images_dir: Union[str, Path], metadata_path: Union[str, Path
     df_multilabel = pd.DataFrame(multilabel_records)
 
     try:
-        output_csv.parent.mkdir(parents=True, exist_ok=True)
+        if images_out.exists():
+            shutil.rmtree(images_out)
+        images_out.mkdir(parents=True)
+        for record in multilabel_records:
+            shutil.copy2(ad_images_dir / record["image_name"], images_out / record["image_name"])
+    except Exception as e:
+        print(f"Error copying images: {e}")
+        return 9
+
+    try:
         df_multilabel.to_csv(output_csv, index=False)
     except Exception as e:
         print(f"Error writing CSV: {e}")
         return 6
 
+    print(f"Copied {len(multilabel_records)} images to {images_out}")
     print(f"Wrote {len(df_multilabel)} rows to {output_csv}")
     return 0
 
@@ -104,10 +122,10 @@ if __name__ == "__main__":
     # simple CLI when run directly
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate multilabel CSV from ad images and metadata.xlsx")
+    parser = argparse.ArgumentParser(description="Generate a multilabel dataset from ad images and metadata.xlsx")
     parser.add_argument("ad_dir", help="Folder containing ad images")
     parser.add_argument("metadata", help="Path to metadata.xlsx")
-    parser.add_argument("output", nargs="?", default="marketing_multilabel_dataset.csv", help="Output CSV path")
+    parser.add_argument("output", help="Output dataset folder (gets images/ and the CSV)")
     args = parser.parse_args()
 
-    raise SystemExit(generate_csv(args.ad_dir, args.metadata, args.output))
+    raise SystemExit(generate_dataset(args.ad_dir, args.metadata, args.output))

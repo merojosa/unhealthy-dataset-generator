@@ -53,6 +53,7 @@ source ./unhealthy-dataset-generator-env/bin/activate
 - The entire project works with a config.json. Check `default_config.json` to understand the structure.
   - `path` is where the script will read the `metadata.xlsx` and videos. It will look something like this:
     ![alt text](assets/path_structure.png)
+    - `path.dataset` (default `./binary-dataset`): root of the binary `ad`/`non_ad` dataset. `path.multilabel_dataset` (default `./multi-strategies-dataset`): output root of the marketing-strategies multilabel dataset.
   - `tip_values`: list of integers. A metadata row is processed only if its `tip` column value *starts with* `"N="` for some N in this list — e.g. `[2,3,4,5,6,7,8]` skips any row whose `tip` starts with `"1="`.
   - `non_ad_ratio`: float (default `1.0`). Number of non-ad frames to generate as a multiple of the total ad frame count — e.g. `1.0` produces one non-ad frame per ad frame, `2.0` produces twice as many.
   - `non_ad_gap_seconds`: int (default `30`). Seconds before and after each ad window that are also excluded when selecting non-ad frame candidates, to avoid borderline content.
@@ -76,7 +77,9 @@ source ./unhealthy-dataset-generator-env/bin/activate
       non_ad/
     duplicates/             # created by image_similarity.py (+ duplicates_manifest.csv)
     excess/                 # created by rebalance.py (+ rebalance_manifest.csv)
-    multilabel_dataset.csv  # created by marketing_strategies_multilabel_dataset_generator/main.py
+{path.multilabel_dataset}/  # created by marketing_strategies_multilabel_dataset_generator/main.py
+  images/                   # copies of the labelled ad frames, wiped on each run
+  marketing_multilabel_dataset.csv
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
@@ -125,22 +128,21 @@ It operates on `{path.dataset}/result` by default and uses `rebalance.target_rat
 
 ### Generating a multilabel dataset (`src/marketing_strategies_multilabel_dataset_generator/main.py`)
 
-This script builds a multilabel CSV by reading the ad images already extracted by the main generator and joining them with the metadata workbook. It is meant to run after the binary dataset has been produced.
+This script builds a self-contained multilabel dataset by reading the ad images already extracted by the main generator, joining them with the metadata workbook, and copying the labelled images into their own folder. It is meant to run after the binary dataset has been produced.
 
 Run it from the repository root:
 
 ```
-python -m src.marketing_strategies_multilabel_dataset_generator.main [path/to/dataset_root]
+python -m src.marketing_strategies_multilabel_dataset_generator.main [path/to/binary_dataset_root] [--output path/to/multilabel_root]
 ```
 
-Pass the dataset root (the same folder as `path.dataset`), not the `result` folder or the individual `ad`/`non_ad` folders. If you do not pass a path, the script defaults to the repository's `dataset` folder. The dataset root must contain:
+The input defaults to `path.dataset` and the output to `path.multilabel_dataset`. Pass the binary dataset root, not the `result` folder or the individual `ad`/`non_ad` folders. It must contain:
 
 ```
-{dataset}/
+{path.dataset}/
   metadata.xlsx
   result/
     ad/        # extracted ad frames, used to build the labels
-    non_ad/    # must exist, but is not read
 ```
 
 Requirements for the inputs:
@@ -150,11 +152,11 @@ Requirements for the inputs:
 
 Generated output:
 
-- `{dataset}/result/marketing_multilabel_dataset.csv`, with an `image_name` column and the `rpr`–`rie` columns copied from the matching metadata row (one row per ad image)
-- The original `.jpg` files remain in place; the script does not move or rewrite them
+- `{path.multilabel_dataset}/images/`: copies of every labelled ad frame. This folder is wiped and rebuilt on each run. The binary dataset is never modified.
+- `{path.multilabel_dataset}/marketing_multilabel_dataset.csv`, with an `image_name` column and the `rpr`–`rie` columns copied from the matching metadata row (one row per image)
 
-To sanity-check the CSV against the images on disk, pass both paths explicitly (the defaults do not match the generator's output location):
+To sanity-check the CSV against the copied images (defaults to `path.multilabel_dataset`):
 
 ```
-python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset path/to/dataset_root/result/marketing_multilabel_dataset.csv path/to/dataset_root/result
+python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [path/to/multilabel_root]
 ```

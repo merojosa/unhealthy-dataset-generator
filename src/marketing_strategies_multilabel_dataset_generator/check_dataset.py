@@ -1,11 +1,12 @@
 import argparse
+import json
 from pathlib import Path
 import sys
 import pandas as pd
 import os
 
 
-def check_dataset(csv_path: Path, dataset_dir: Path) -> int:
+def check_dataset(csv_path: Path, images_dir: Path) -> int:
     problems = 0
 
     if not csv_path.is_file():
@@ -24,9 +25,9 @@ def check_dataset(csv_path: Path, dataset_dir: Path) -> int:
 
     csv_images = set(df['image_name'].astype(str).tolist())
 
-    ad_dir = dataset_dir / 'ad'
+    ad_dir = images_dir
     if not ad_dir.is_dir():
-        print(f"Error: ad folder not found: {ad_dir}")
+        print(f"Error: images folder not found: {ad_dir}")
         return 5
 
     disk_images = set([f for f in os.listdir(ad_dir) if f.lower().endswith('.jpg')])
@@ -85,17 +86,24 @@ def check_dataset(csv_path: Path, dataset_dir: Path) -> int:
         return 1
 
 
+def load_config() -> dict:
+    try:
+        with open("config.json") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        with open("default_config.json") as f:
+            return json.load(f)
+
+
 def main():
-    repo_root = Path(__file__).resolve().parents[2]
-    default_csv = repo_root / 'marketing_multilabel_dataset.csv'
-    default_dataset = repo_root / 'dataset'
+    default_dataset = load_config()["path"]["multilabel_dataset"]
 
     parser = argparse.ArgumentParser(description='Check multilabel dataset CSV and image files')
-    parser.add_argument('csv', nargs='?', default=str(default_csv), help=f'CSV file (default: {default_csv})')
-    parser.add_argument('dataset', nargs='?', default=str(default_dataset), help=f'Dataset folder (default: {default_dataset})')
+    parser.add_argument('dataset', nargs='?', default=default_dataset, help=f'Multilabel dataset root containing images/ and marketing_multilabel_dataset.csv (default: path.multilabel_dataset = {default_dataset})')
     args = parser.parse_args()
 
-    rc = check_dataset(Path(args.csv), Path(args.dataset))
+    dataset = Path(args.dataset)
+    rc = check_dataset(dataset / 'marketing_multilabel_dataset.csv', dataset / 'images')
     sys.exit(rc)
 
 

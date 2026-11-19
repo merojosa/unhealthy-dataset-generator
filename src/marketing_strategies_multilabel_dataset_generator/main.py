@@ -1,78 +1,83 @@
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
 
-def check_folder(path_str: str, repo_root: Path) -> int:
+def load_config() -> dict:
+    try:
+        with open("config.json") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        with open("default_config.json") as f:
+            return json.load(f)
+
+
+def check_folder(path_str: str) -> int:
     """Return 0 if valid, non-zero exit code on error.
 
-    Checks that `path` exists and contains `ad` and `non_ad` subfolders.
+    Checks that the binary dataset root has `result/ad` and `metadata.xlsx`.
     """
     if not os.path.isdir(path_str):
         print(f"Error: folder '{path_str}' does not exist or is not a directory.", file=sys.stderr)
         return 2
 
     path = Path(path_str)
+    ad_dir = path / "result" / "ad"
 
-    if not os.path.isdir(path / "result"):
-        print(f"Error: folder '{path}' does not contain a 'result' subfolder.", file=sys.stderr)
+    if not ad_dir.is_dir():
+        print(f"Error: folder '{path}' does not contain a 'result/ad' subfolder.", file=sys.stderr)
         return 3
 
-    result_dir = path / "result"
-
-    missing = []
-    for sub in ("ad", "non_ad"):
-        if not os.path.isdir(os.path.join(result_dir, sub)):
-            missing.append(sub)
-
-    if missing:
-        print(f"Error: missing subfolder(s) in '{path}': {', '.join(missing)}", file=sys.stderr)
-        return 3
-
-    # check for metadata.xlsx at project root
     metadata_path = path / "metadata.xlsx"
     if not metadata_path.is_file():
-        print(f"Error: metadata.xlsx not found at project root: {metadata_path}", file=sys.stderr)
+        print(f"Error: metadata.xlsx not found at dataset root: {metadata_path}", file=sys.stderr)
         return 4
 
-    print(f"OK: found both 'result/ad' and 'result/non_ad' in '{path}' and metadata.xlsx at '{metadata_path}'")
+    print(f"OK: found 'result/ad' in '{path}' and metadata.xlsx at '{metadata_path}'")
     return 0
 
 
 def main() -> None:
-    # default to <repo_root>/dataset when no folder is provided
-    repo_root = Path(__file__).resolve().parents[2]
-    default_folder = str(repo_root / "dataset")
+    config = load_config()
+    default_input = config["path"]["dataset"]
+    default_output = config["path"]["multilabel_dataset"]
 
     parser = argparse.ArgumentParser(
-        description="Check a dataset folder contains 'ad' and 'non_ad' subfolders."
+        description="Build the marketing-strategies multilabel dataset from the binary dataset's ad frames."
     )
     parser.add_argument(
         "folder",
         nargs="?",
-        default=default_folder,
-        help=f"Path to folder containing the dataset (default: {default_folder})",
+        default=default_input,
+        help=f"Binary dataset root containing metadata.xlsx and result/ad (default: path.dataset = {default_input})",
+    )
+    parser.add_argument(
+        "--output",
+        default=default_output,
+        help=f"Output dataset root (default: path.multilabel_dataset = {default_output})",
     )
     args = parser.parse_args()
 
-    rc = check_folder(args.folder, Path(repo_root))
+    if Path(args.output).resolve() == Path(args.folder).resolve():
+        print("Error: output folder must differ from the binary dataset folder.", file=sys.stderr)
+        sys.exit(5)
+
+    rc = check_folder(args.folder)
     if rc != 0:
         sys.exit(rc)
 
-    # proceed to generate CSV mapping images to marketing strategies
     try:
-        from .generator import generate_csv
+        from .generator import generate_dataset
     except ImportError:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from generator import generate_csv
+        from generator import generate_dataset
 
     ad_dir = Path(args.folder) / "result" / "ad"
     metadata_path = Path(args.folder) / "metadata.xlsx"
-    output_csv = Path(args.folder) / "result" / "marketing_multilabel_dataset.csv"
 
-    gen_rc = generate_csv(ad_dir, metadata_path, output_csv)
-    sys.exit(gen_rc)
+    sys.exit(generate_dataset(ad_dir, metadata_path, args.output))
 
 
 if __name__ == "__main__":
