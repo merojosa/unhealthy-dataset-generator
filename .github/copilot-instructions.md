@@ -25,6 +25,7 @@ The dedup pipeline needs `sentence-transformers` + `torch` (CLIP `clip-ViT-B-32`
   - Rebalance: `python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N] [--excess-dir DIR]`
   - Multilabel dataset: `python -m src.marketing_strategies_multilabel_dataset_generator.main [binary_root] [--output DIR]` — input defaults to `path.dataset` (pass the root, not `result/`), output to `path.multilabel_dataset`.
   - Check multilabel dataset: `python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [multilabel_root]` — defaults to `path.multilabel_dataset`.
+  - Tip multiclass dataset: `python -m src.tip_multiclass_dataset_generator.main [binary_root] [--output DIR] [--non-ad-ratio N]` (output defaults to `path.multiclass_dataset`); check with `python -m src.tip_multiclass_dataset_generator.check_dataset [multiclass_root]`.
 - Crop tuning: `python src/misc/test_custom_crop_params.py --video_path <path> --top N --bottom N --left N --right N` — shows the cropped frame and prints a `"crop": {...}` snippet for `videos_metadata.<file>.crop`.
 
 There is no test suite, linter, or formatter. Validate changes by running the affected script (`--dry-run` for dedup/rebalance).
@@ -47,6 +48,7 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - `image_similarity.py` → `result/duplicates/` (relative paths preserved) + `duplicates_manifest.csv`. Computes a perceptual dHash and a normalized CLIP embedding per frame, blends them by `clip_weight`, and runs a chunked matmul + `UnionFind` over pairs scoring ≥ `combined_threshold` (never materializes all O(n²) pairs). Keeps the lexicographically-first frame per group.
 - `rebalance.py` → `result/excess/` + `rebalance_manifest.csv`. `plan_trim` trims only the majority class (never duplicates) to hit `non_ad:ad == target_ratio`; `evenly_spaced_keep_indices` keeps survivors spread across the time-ordered sequence.
 - `marketing_strategies_multilabel_dataset_generator/` — `main.py` checks the binary root has `metadata.xlsx` and `result/ad/`, and refuses an output equal to the input. Then `generator.generate_dataset` reads `result/ad/*.jpg`, extracts the 5-digit `cod` via `_(\d{5})_\d+\.jpg$`, and joins it with `metadata.xlsx` (sheet `Base combinada`, else the first sheet). It wipes and refills `{multilabel_dataset}/images/` with **copies** of matched frames and writes `image_name` + every column from `rpr` through `rie` (inclusive, by position) to `{multilabel_dataset}/marketing_multilabel_dataset.csv`. Non-matching files are skipped; the binary dataset is never modified. `check_dataset.py` reports images missing from `images/` or from the CSV, duplicate rows, and absent `rpr`/`rie` columns.
+- `tip_multiclass_dataset_generator/` — same structure and input checks as the multilabel package, but the single class per frame is the integer prefix of `tip` (`"2=..."` → `2`), keeping only frames whose tip is in `tip_values` (so `tip=1` is excluded). It also adds a synthetic class `0` (`NON_AD_TIP`) from `result/non_ad/`, sized `round(multiclass.non_ad_ratio × largest ad class)` and evenly sampled in time order (`--non-ad-ratio` overrides; `0` disables). It writes `images/` + `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`) under `path.multiclass_dataset`. `check_dataset.py` also prints the class distribution.
 
 `EXCLUDED_DIRS` differs per script: `image_similarity.py` skips `discarded`/`duplicates`; `rebalance.py` also skips `excess`. Add any new sibling output folder under `result/` to each set.
 
@@ -58,13 +60,14 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - **Output filenames** `{video}_{cod}_{counter}.jpg` are parsed downstream (multilabel `cod` regex, review GUI grouping by ad batch) — keep the format stable.
 
 ### Config keys
-- `path.dataset` (`./binary-dataset`): root containing `metadata.xlsx`; binary output goes to `{dataset}/result/`. `path.multilabel_dataset` (`./multi-strategies-dataset`): multilabel output root. `path.videos`: folder of `.mp4` files.
+- `path.dataset` (`./binary-dataset`): root containing `metadata.xlsx`; binary output goes to `{dataset}/result/`. `path.multilabel_dataset` (`./multi-strategies-dataset`): multilabel output root. `path.multiclass_dataset` (`./tip-multiclass-dataset`): tip multiclass output root. `path.videos`: folder of `.mp4` files.
 - `tip_values`: ints; a row is processed only if `tip` *starts with* `"{n}="` (e.g. `[2,3]` matches `"2=foo"`, not `"1=foo"`).
 - `tv_channels_mapping`: first char of `can` → filename channel (`"1" → "DN"` reads `{date}_DN_processed.mp4`).
 - `videos_metadata[filename]`: `start_time` (`HH:MM:SS`, recording wall-clock start used to convert `hin`/`hfi` into offsets) and optional `crop` (`top`/`bottom`/`left`/`right` px).
 - `non_ad_ratio` (float, 1.0): non-ad frames as a multiple of ad frames. `non_ad_gap_seconds` (int, 30): exclusion margin around each ad window.
 - `duplicate_images_removal`: `hash_size`, `combined_threshold`, `clip_weight` (0–1, CLIP vs hash), `batch_size`, `chunk_size`.
 - `rebalance.target_ratio` (float, 1.0): desired `non_ad:ad`.
+- `multiclass.non_ad_ratio` (float, 0.5): size of the tip-multiclass non-ad class (`tip 0`) as a multiple of the largest ad class.
 
 ### Metadata columns (`metadata.xlsx`)
 `tip` (type filter), `can` (channel code), `fec` (date; `datetime` or a format in `processor.formats`), `hin`/`hfi` (ad start/end `datetime.time`), `cod` (row id embedded in filenames), `rpr`…`rie` (multilabel marketing labels).
@@ -81,6 +84,9 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 {path.multilabel_dataset}/                  # marketing_strategies_multilabel_dataset_generator
   images/                                   # copies of labelled ad frames, wiped each run
   marketing_multilabel_dataset.csv
+{path.multiclass_dataset}/                  # tip_multiclass_dataset_generator
+  images/                                   # copies of labelled ad frames, wiped each run
+  tip_multiclass_dataset.csv
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```

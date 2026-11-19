@@ -53,7 +53,7 @@ source ./unhealthy-dataset-generator-env/bin/activate
 - The entire project works with a config.json. Check `default_config.json` to understand the structure.
   - `path` is where the script will read the `metadata.xlsx` and videos. It will look something like this:
     ![alt text](assets/path_structure.png)
-    - `path.dataset` (default `./binary-dataset`): root of the binary `ad`/`non_ad` dataset. `path.multilabel_dataset` (default `./multi-strategies-dataset`): output root of the marketing-strategies multilabel dataset.
+    - `path.dataset` (default `./binary-dataset`): root of the binary `ad`/`non_ad` dataset. `path.multilabel_dataset` (default `./multi-strategies-dataset`): output root of the marketing-strategies multilabel dataset. `path.multiclass_dataset` (default `./tip-multiclass-dataset`): output root of the `tip` multiclass dataset.
   - `tip_values`: list of integers. A metadata row is processed only if its `tip` column value *starts with* `"N="` for some N in this list — e.g. `[2,3,4,5,6,7,8]` skips any row whose `tip` starts with `"1="`.
   - `non_ad_ratio`: float (default `1.0`). Number of non-ad frames to generate as a multiple of the total ad frame count — e.g. `1.0` produces one non-ad frame per ad frame, `2.0` produces twice as many.
   - `non_ad_gap_seconds`: int (default `30`). Seconds before and after each ad window that are also excluded when selecting non-ad frame candidates, to avoid borderline content.
@@ -80,6 +80,9 @@ source ./unhealthy-dataset-generator-env/bin/activate
 {path.multilabel_dataset}/  # created by marketing_strategies_multilabel_dataset_generator/main.py
   images/                   # copies of the labelled ad frames, wiped on each run
   marketing_multilabel_dataset.csv
+{path.multiclass_dataset}/  # created by tip_multiclass_dataset_generator/main.py
+  images/                   # copies of the labelled ad frames, wiped on each run
+  tip_multiclass_dataset.csv
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
@@ -159,4 +162,27 @@ To sanity-check the CSV against the copied images (defaults to `path.multilabel_
 
 ```
 python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [path/to/multilabel_root]
+```
+
+### Generating a tip multiclass dataset (`src/tip_multiclass_dataset_generator/main.py`)
+
+Works like the multilabel generator, but each ad frame gets a single class: the numeric prefix of the metadata `tip` column (`"2=Productos..."` → `2`). Frames whose `tip` is not in `tip_values` are skipped, so `tip=1` (non-food products) is excluded, just as it is in the binary dataset.
+
+It also adds a synthetic class `0` ("No es anuncio") with frames from `result/non_ad/`. Its size is `round(multiclass.non_ad_ratio × largest ad class)` (default `0.5`), capped at the frames available. The frames are sampled evenly across the time-ordered sequence, so the result is reproducible. Override it with `--non-ad-ratio N`, or pass `0` to disable the class.
+
+```
+python -m src.tip_multiclass_dataset_generator.main [path/to/binary_dataset_root] [--output path/to/multiclass_root] [--non-ad-ratio N]
+```
+
+The input defaults to `path.dataset` and the output to `path.multiclass_dataset`. The input layout and filename requirements are the same as for the multilabel generator, but the workbook only needs the `cod` and `tip` columns.
+
+Generated output:
+
+- `{path.multiclass_dataset}/images/`: copies of every labelled ad frame and the sampled non-ad frames. This folder is wiped and rebuilt on each run.
+- `{path.multiclass_dataset}/tip_multiclass_dataset.csv`, with the columns `image_name`, `tip` (integer class) and `tip_label` (the class description)
+
+To sanity-check it and print the class distribution:
+
+```
+python -m src.tip_multiclass_dataset_generator.check_dataset [path/to/multiclass_root]
 ```

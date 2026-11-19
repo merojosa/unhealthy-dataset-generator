@@ -2,7 +2,8 @@
   "path": {
     "videos": "E:/Jose/thesis_dataset/processed",
     "dataset": "./binary-dataset",
-    "multilabel_dataset": "./multi-strategies-dataset"
+    "multilabel_dataset": "./multi-strategies-dataset",
+    "multiclass_dataset": "./tip-multiclass-dataset"
   },
   "tip_values": [2, 3, 4, 5, 6, 7, 8],
   "non_ad_ratio": 1.0,
@@ -16,6 +17,9 @@
   },
   "rebalance": {
     "target_ratio": 1.0
+  },
+  "multiclass": {
+    "non_ad_ratio": 0.5
   },
   "tv_channels_mapping": {
     "1": "DN",
