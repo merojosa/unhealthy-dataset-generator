@@ -23,8 +23,8 @@ The dedup pipeline needs `sentence-transformers` + `torch` (CLIP `clip-ViT-B-32`
   - Review GUI: `python src/misc/review_dataset.py` — browses `result/ad/` by ad batch and `result/non_ad/` by page. Keys: `A` select all, `D` discard & advance, `H`/`L` or arrows navigate, `Ctrl+Z` undo.
   - Dedup: `python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run] [--combined-threshold N] [--clip-weight N] [--hash-size N] [--batch-size N] [--chunk-size N]` (defaults to `{dataset}/result`; flags override the `duplicate_images_removal` config block).
   - Rebalance: `python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N] [--excess-dir DIR]`
-  - Multilabel CSV: `python -m src.multilabel_dataset_generator.main [dataset_root]` — pass the dataset root (not `result/`); defaults to `<repo>/dataset`.
-  - Check multilabel CSV: `python -m src.multilabel_dataset_generator.check_dataset <dataset_root>/result/marketing_multilabel_dataset.csv <dataset_root>/result` — always pass both; the defaults (`<repo>/marketing_multilabel_dataset.csv`, `<repo>/dataset`) don't match the generator's output.
+  - Multilabel CSV: `python -m src.marketing_strategies_multilabel_dataset_generator.main [dataset_root]` — pass the dataset root (not `result/`); defaults to `<repo>/dataset`.
+  - Check multilabel CSV: `python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset <dataset_root>/result/marketing_multilabel_dataset.csv <dataset_root>/result` — always pass both; the defaults (`<repo>/marketing_multilabel_dataset.csv`, `<repo>/dataset`) don't match the generator's output.
 - Crop tuning: `python src/misc/test_custom_crop_params.py --video_path <path> --top N --bottom N --left N --right N` — shows the cropped frame and prints a `"crop": {...}` snippet for `videos_metadata.<file>.crop`.
 
 There is no test suite, linter, or formatter. Validate changes by running the affected script (`--dry-run` for dedup/rebalance).
@@ -46,7 +46,7 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - `review_dataset.py` → `result/discarded/{ad,non_ad}/`.
 - `image_similarity.py` → `result/duplicates/` (relative paths preserved) + `duplicates_manifest.csv`. Computes a perceptual dHash and a normalized CLIP embedding per frame, blends them by `clip_weight`, and runs a chunked matmul + `UnionFind` over pairs scoring ≥ `combined_threshold` (never materializes all O(n²) pairs). Keeps the lexicographically-first frame per group.
 - `rebalance.py` → `result/excess/` + `rebalance_manifest.csv`. `plan_trim` trims only the majority class (never duplicates) to hit `non_ad:ad == target_ratio`; `evenly_spaced_keep_indices` keeps survivors spread across the time-ordered sequence.
-- `multilabel_dataset_generator/` — `main.py` checks the dataset root has `metadata.xlsx` and `result/{ad,non_ad}/`. Then `generator.generate_csv` reads `result/ad/*.jpg`, extracts the 5-digit `cod` via `_(\d{5})_\d+\.jpg$`, and joins it with `metadata.xlsx` (sheet `Base combinada`, else the first sheet). It writes `image_name` + every column from `rpr` through `rie` (inclusive, by position) to `result/marketing_multilabel_dataset.csv`. Non-matching files are skipped and images are never moved. `check_dataset.py` reports images missing from disk or from the CSV, duplicate rows, and absent `rpr`/`rie` columns.
+- `marketing_strategies_multilabel_dataset_generator/` — `main.py` checks the dataset root has `metadata.xlsx` and `result/{ad,non_ad}/`. Then `generator.generate_csv` reads `result/ad/*.jpg`, extracts the 5-digit `cod` via `_(\d{5})_\d+\.jpg$`, and joins it with `metadata.xlsx` (sheet `Base combinada`, else the first sheet). It writes `image_name` + every column from `rpr` through `rie` (inclusive, by position) to `result/marketing_multilabel_dataset.csv`. Non-matching files are skipped and images are never moved. `check_dataset.py` reports images missing from disk or from the CSV, duplicate rows, and absent `rpr`/`rie` columns.
 
 `EXCLUDED_DIRS` differs per script: `image_similarity.py` skips `discarded`/`duplicates`; `rebalance.py` also skips `excess`. Add any new sibling output folder under `result/` to each set.
 
@@ -78,7 +78,7 @@ There is no test suite, linter, or formatter. Validate changes by running the af
     discarded/{ad,non_ad}/          # review_dataset.py
     duplicates/ + duplicates_manifest.csv   # image_similarity.py
     excess/ + rebalance_manifest.csv        # rebalance.py
-    marketing_multilabel_dataset.csv        # multilabel_dataset_generator
+    marketing_multilabel_dataset.csv        # marketing_strategies_multilabel_dataset_generator
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```

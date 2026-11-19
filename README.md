@@ -76,7 +76,7 @@ source ./unhealthy-dataset-generator-env/bin/activate
       non_ad/
     duplicates/             # created by image_similarity.py (+ duplicates_manifest.csv)
     excess/                 # created by rebalance.py (+ rebalance_manifest.csv)
-    multilabel_dataset.csv  # created by multilabel_dataset_generator/main.py
+    multilabel_dataset.csv  # created by marketing_strategies_multilabel_dataset_generator/main.py
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```
@@ -123,14 +123,14 @@ python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio 
 
 It operates on `{path.dataset}/result` by default and uses `rebalance.target_ratio` from the config unless `--target-ratio` is given. As with the other tools, frames are moved (recorded in `rebalance_manifest.csv`), not deleted.
 
-### Generating a multilabel dataset (`src/multilabel_dataset_generator/main.py`)
+### Generating a multilabel dataset (`src/marketing_strategies_multilabel_dataset_generator/main.py`)
 
 This script builds a multilabel CSV by reading the ad images already extracted by the main generator and joining them with the metadata workbook. It is meant to run after the binary dataset has been produced.
 
 Run it from the repository root:
 
 ```
-python -m src.multilabel_dataset_generator.main [path/to/dataset_root]
+python -m src.marketing_strategies_multilabel_dataset_generator.main [path/to/dataset_root]
 ```
 
 Pass the dataset root (the same folder as `path.dataset`), not the `result` folder or the individual `ad`/`non_ad` folders. If you do not pass a path, the script defaults to the repository's `dataset` folder. The dataset root must contain:
@@ -156,5 +156,5 @@ Generated output:
 To sanity-check the CSV against the images on disk, pass both paths explicitly (the defaults do not match the generator's output location):
 
 ```
-python -m src.multilabel_dataset_generator.check_dataset path/to/dataset_root/result/marketing_multilabel_dataset.csv path/to/dataset_root/result
+python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset path/to/dataset_root/result/marketing_multilabel_dataset.csv path/to/dataset_root/result
 ```
