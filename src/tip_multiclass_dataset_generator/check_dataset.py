@@ -63,6 +63,23 @@ def check_dataset(csv_path: Path, images_dir: Path) -> int:
         print(f"Error: {null_tips} rows have an empty 'tip'.")
         problems += 1
 
+    if 'group' not in df.columns:
+        print("Error: 'group' column missing; regenerate the dataset after running group_frames.py.")
+        problems += 1
+    else:
+        null_groups = int(df['group'].isna().sum())
+        print("Groups per class (tip: frames / groups):")
+        for tip, sub in df.groupby('tip'):
+            print(f"  {tip}: {len(sub)} / {sub['group'].nunique()}")
+        mixed = df.dropna(subset=['group']).groupby('group')['tip'].nunique()
+        mixed = mixed[mixed > 1]
+        if len(mixed):
+            # Not an error: CLIP merged look-alike creatives of different tips; they must still share a split.
+            print(f"Note: {len(mixed)} group(s) span more than one tip: {', '.join(mixed.index[:10])}")
+        if null_groups:
+            print(f"Error: {null_groups} rows have an empty 'group'; run group_frames.py and regenerate.")
+            problems += 1
+
     if problems == 0:
         print("OK: multiclass dataset looks consistent.")
         return 0

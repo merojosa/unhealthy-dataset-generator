@@ -14,7 +14,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Subfolders under result/ that hold frames already pulled out of the dataset.
 # They must never be scanned (we don't want to compare against, or move, frames
 # that were already discarded or marked duplicate in a previous run).
-EXCLUDED_DIRS = {"discarded", "duplicates"}
+EXCLUDED_DIRS = {"discarded", "duplicates", "capped"}
 
 # Same as main.py: look for config.json in the CWD and, if it isn't there,
 # fall back to default_config.json (assumed to always be present).

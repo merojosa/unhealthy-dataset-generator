@@ -21,6 +21,11 @@
   "multiclass": {
     "non_ad_ratio": 0.5
   },
+  "grouping": {
+    "max_frames_per_creative": 50,
+    "merge_threshold": 0.945,
+    "batch_size": 32
+  },
   "tv_channels_mapping": {
     "1": "DN",
     "2": "CN",

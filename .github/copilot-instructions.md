@@ -23,6 +23,7 @@ The dedup pipeline needs `sentence-transformers` + `torch` (CLIP `clip-ViT-B-32`
   - Review GUI: `python src/misc/review_dataset.py` — browses `result/ad/` by ad batch and `result/non_ad/` by page. Keys: `A` select all, `D` discard & advance, `H`/`L` or arrows navigate, `Ctrl+Z` undo.
   - Dedup: `python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run] [--combined-threshold N] [--clip-weight N] [--hash-size N] [--batch-size N] [--chunk-size N]` (defaults to `{dataset}/result`; flags override the `duplicate_images_removal` config block).
   - Rebalance: `python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N] [--excess-dir DIR]`
+  - Leakage grouping + per-creative cap: `python src/grouping_pipeline/group_frames.py [result] [--dry-run] [--max-frames N] [--merge-threshold N] [--batch-size N]` — run after dedup/review, before rebalance and the multiclass generator.
   - Multilabel dataset: `python -m src.marketing_strategies_multilabel_dataset_generator.main [binary_root] [--output DIR]` — input defaults to `path.dataset` (pass the root, not `result/`), output to `path.multilabel_dataset`.
   - Check multilabel dataset: `python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [multilabel_root]` — defaults to `path.multilabel_dataset`.
   - Tip multiclass dataset: `python -m src.tip_multiclass_dataset_generator.main [binary_root] [--output DIR] [--non-ad-ratio N]` (output defaults to `path.multiclass_dataset`); check with `python -m src.tip_multiclass_dataset_generator.check_dataset [multiclass_root]`.
@@ -47,10 +48,11 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - `review_dataset.py` → `result/discarded/{ad,non_ad}/`.
 - `image_similarity.py` → `result/duplicates/` (relative paths preserved) + `duplicates_manifest.csv`. Computes a perceptual dHash and a normalized CLIP embedding per frame, blends them by `clip_weight`, and runs a chunked matmul + `UnionFind` over pairs scoring ≥ `combined_threshold` (never materializes all O(n²) pairs). Keeps the lexicographically-first frame per group.
 - `rebalance.py` → `result/excess/` + `rebalance_manifest.csv`. `plan_trim` trims only the majority class (never duplicates) to hit `non_ad:ad == target_ratio`; `evenly_spaced_keep_indices` keeps survivors spread across the time-ordered sequence.
+- `grouping_pipeline/group_frames.py` → `result/groups.csv` (`image_name`, `label`, `group`, `creative`, `capped`) + `result/capped/ad/` + `capped_manifest.csv`. Rows ≠ ads: one creative airs under many `cod`s, so ad groups key on normalized `nom` (via `cod`), then union creatives whose **mean** CLIP embedding cosine ≥ `grouping.merge_threshold` (centroids, not frames, to avoid chaining through black frames/logos). Non-ad group = source video (`non_ad_{video}`; filenames carry a counter, not the second). Ad groups over `max_frames_per_creative` keep `evenly_spaced_keep_indices` survivors in airing order (`cod`, counter). Already-capped frames still count toward their group, so re-runs are stable.
 - `marketing_strategies_multilabel_dataset_generator/` — `main.py` checks the binary root has `metadata.xlsx` and `result/ad/`, and refuses an output equal to the input. Then `generator.generate_dataset` reads `result/ad/*.jpg`, extracts the 5-digit `cod` via `_(\d{5})_\d+\.jpg$`, and joins it with `metadata.xlsx` (sheet `Base combinada`, else the first sheet). It wipes and refills `{multilabel_dataset}/images/` with **copies** of matched frames and writes `image_name` + every column from `rpr` through `rie` (inclusive, by position) to `{multilabel_dataset}/marketing_multilabel_dataset.csv`. Non-matching files are skipped; the binary dataset is never modified. `check_dataset.py` reports images missing from `images/` or from the CSV, duplicate rows, and absent `rpr`/`rie` columns.
-- `tip_multiclass_dataset_generator/` — same structure and input checks as the multilabel package, but the single class per frame is the integer prefix of `tip` (`"2=..."` → `2`), keeping only frames whose tip is in `tip_values` (so `tip=1` is excluded). It also adds a synthetic class `0` (`NON_AD_TIP`) from `result/non_ad/`, sized `round(multiclass.non_ad_ratio × largest ad class)` and evenly sampled in time order (`--non-ad-ratio` overrides; `0` disables). It writes `images/` + `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`) under `path.multiclass_dataset`. `check_dataset.py` also prints the class distribution.
+- `tip_multiclass_dataset_generator/` — same structure and input checks as the multilabel package, but the single class per frame is the integer prefix of `tip` (`"2=..."` → `2`), keeping only frames whose tip is in `tip_values` (so `tip=1` is excluded). It also adds a synthetic class `0` (`NON_AD_TIP`) from `result/non_ad/`, sized `round(multiclass.non_ad_ratio × largest ad class)` and evenly sampled in time order (`--non-ad-ratio` overrides; `0` disables). It writes `images/` + `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`, `group`) under `path.multiclass_dataset`; `group` comes from the binary `result/groups.csv`. `check_dataset.py` also prints the class distribution and frames/groups per class, notes groups spanning several tips, and fails on empty `group`.
 
-`EXCLUDED_DIRS` differs per script: `image_similarity.py` skips `discarded`/`duplicates`; `rebalance.py` also skips `excess`. Add any new sibling output folder under `result/` to each set.
+`EXCLUDED_DIRS` differs per script: `image_similarity.py` skips `discarded`/`duplicates`/`capped`; `rebalance.py` also skips `excess`. Add any new sibling output folder under `result/` to each set.
 
 ## Conventions
 
@@ -68,6 +70,7 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - `duplicate_images_removal`: `hash_size`, `combined_threshold`, `clip_weight` (0–1, CLIP vs hash), `batch_size`, `chunk_size`.
 - `rebalance.target_ratio` (float, 1.0): desired `non_ad:ad`.
 - `multiclass.non_ad_ratio` (float, 0.5): size of the tip-multiclass non-ad class (`tip 0`) as a multiple of the largest ad class.
+- `grouping`: `max_frames_per_creative` (int, 50; 0 = no cap), `merge_threshold` (float, 0.945 — calibrated: pairs ≥0.945 were same brand/campaign, false merges start ≈0.94), `batch_size`.
 
 ### Metadata columns (`metadata.xlsx`)
 `tip` (type filter), `can` (channel code), `fec` (date; `datetime` or a format in `processor.formats`), `hin`/`hfi` (ad start/end `datetime.time`), `cod` (row id embedded in filenames), `rpr`…`rie` (multilabel marketing labels).
@@ -81,6 +84,8 @@ There is no test suite, linter, or formatter. Validate changes by running the af
     discarded/{ad,non_ad}/          # review_dataset.py
     duplicates/ + duplicates_manifest.csv   # image_similarity.py
     excess/ + rebalance_manifest.csv        # rebalance.py
+    capped/ad/ + capped_manifest.csv        # group_frames.py
+    groups.csv                              # group_frames.py
 {path.multilabel_dataset}/                  # marketing_strategies_multilabel_dataset_generator
   images/                                   # copies of labelled ad frames, wiped each run
   marketing_multilabel_dataset.csv

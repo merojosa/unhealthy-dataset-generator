@@ -88,6 +88,7 @@ def main() -> None:
         tip_values=config["tip_values"],
         non_ad_images_dir=folder / "result" / "non_ad",
         non_ad_ratio=args.non_ad_ratio,
+        groups_csv=folder / "result" / "groups.csv",
     ))
 
 

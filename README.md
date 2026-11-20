@@ -61,6 +61,7 @@ source ./unhealthy-dataset-generator-env/bin/activate
   - `videos_metadata`: one entry per video file. `start_time` (`HH:MM:SS`) is the wall-clock time the recording begins — the pipeline subtracts this from the ad's `hin`/`hfi` times to find the frame offset inside the video. `crop` (`top`/`bottom`/`left`/`right`, in pixels) trims each extracted frame; it is optional and can be omitted if no crop is needed (use `test_custom_crop_params.py` to find the right values).
   - `duplicate_images_removal`: defaults for the duplicate-removal script — `combined_threshold` (the score at/above which two frames are treated as duplicates), `clip_weight` (how much weight the combined score gives CLIP similarity vs. the perceptual hash, 0–1), `hash_size`, `batch_size`, and `chunk_size`. Each can be overridden per run with a command-line flag.
   - `rebalance.target_ratio`: float (default `1.0`). The desired `non_ad : ad` ratio the rebalance script trims toward.
+  - `grouping`: defaults for the leakage-grouping script. `max_frames_per_creative` (default `50`, `0` disables the cap) is the most active ad frames kept per creative group. `merge_threshold` (default `0.945`) is the CLIP centroid cosine similarity at or above which two creatives are merged. `batch_size` is the CLIP batch size.
 - To check a particular video, you should populate `metadata.xlsx` with the data related to the video. For example, if you want to test `2024-04-06_DN.mp4`, you should filter "can" to 1 and "fec" to 06-04-24.
 - The output of the script will be on `path/result`. Every image has the following structure: video name where the it was extracted + id from `metadata.xlsx`("cod" column) + counter id + .jpg.
 
@@ -77,6 +78,8 @@ source ./unhealthy-dataset-generator-env/bin/activate
       non_ad/
     duplicates/             # created by image_similarity.py (+ duplicates_manifest.csv)
     excess/                 # created by rebalance.py (+ rebalance_manifest.csv)
+    capped/ad/              # created by group_frames.py (+ capped_manifest.csv)
+    groups.csv              # created by group_frames.py
 {path.multilabel_dataset}/  # created by marketing_strategies_multilabel_dataset_generator/main.py
   images/                   # copies of the labelled ad frames, wiped on each run
   marketing_multilabel_dataset.csv
@@ -129,6 +132,21 @@ python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio 
 
 It operates on `{path.dataset}/result` by default and uses `rebalance.target_ratio` from the config unless `--target-ratio` is given. As with the other tools, frames are moved (recorded in `rebalance_manifest.csv`), not deleted.
 
+### Grouping frames to prevent split leakage (`src/grouping_pipeline/group_frames.py`)
+
+The same commercial airs many times under different metadata rows (`cod`). Splitting by row would therefore put near-identical frames in train, validation and test. This script assigns every frame a **group** that training scripts should keep inside a single split (for example with scikit-learn's `GroupShuffleSplit` or `StratifiedGroupKFold`):
+
+- **Ad frames** are grouped by creative. The metadata `nom` is normalized (accents, case, spaces and punctuation removed). Creatives whose mean CLIP embeddings reach `grouping.merge_threshold` are then merged, which catches typos in `nom` and alternate cuts of the same campaign. Only per-creative centroids are compared, so a single black frame or channel logo can't chain unrelated ads together.
+- **Non-ad frames** get one group per source video.
+
+It also caps each ad group at `grouping.max_frames_per_creative` frames, keeping survivors evenly spaced across airings, so one heavily aired spot doesn't dominate its class. The surplus is moved (not deleted) to `result/capped/ad/` and recorded in `capped_manifest.csv`. Run it after dedup and review, and before rebalance and the multiclass generator:
+
+```
+python src/grouping_pipeline/group_frames.py [result] [--dry-run] [--max-frames N] [--merge-threshold N] [--batch-size N]
+```
+
+It writes `result/groups.csv` with the columns `image_name`, `label`, `group`, `creative` and `capped`, and prints every merged creative pair so you can audit the merges. Re-running it is safe: frames that were already capped still count toward their group, so nothing is trimmed twice.
+
 ### Generating a multilabel dataset (`src/marketing_strategies_multilabel_dataset_generator/main.py`)
 
 This script builds a self-contained multilabel dataset by reading the ad images already extracted by the main generator, joining them with the metadata workbook, and copying the labelled images into their own folder. It is meant to run after the binary dataset has been produced.
@@ -179,9 +197,9 @@ The input defaults to `path.dataset` and the output to `path.multiclass_dataset`
 Generated output:
 
 - `{path.multiclass_dataset}/images/`: copies of every labelled ad frame and the sampled non-ad frames. This folder is wiped and rebuilt on each run.
-- `{path.multiclass_dataset}/tip_multiclass_dataset.csv`, with the columns `image_name`, `tip` (integer class) and `tip_label` (the class description)
+- `{path.multiclass_dataset}/tip_multiclass_dataset.csv`, with the columns `image_name`, `tip` (integer class), `tip_label` (the class description) and `group` (copied from the binary dataset's `result/groups.csv`; split by this column to avoid leakage). If `groups.csv` is missing, `group` is left empty for ad frames and the checker reports it.
 
-To sanity-check it and print the class distribution:
+To sanity-check it and print the class distribution, plus frames and groups per class:
 
 ```
 python -m src.tip_multiclass_dataset_generator.check_dataset [path/to/multiclass_root]

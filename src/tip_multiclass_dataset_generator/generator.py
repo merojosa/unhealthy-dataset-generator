@@ -43,6 +43,16 @@ def parse_tip(value) -> Optional[tuple]:
     return int(match.group(1)), match.group(2).strip()
 
 
+def load_groups(groups_csv: Optional[Path]) -> dict:
+    """image_name -> leakage-safe group from the binary dataset's result/groups.csv (empty if absent)."""
+    if groups_csv is None or not groups_csv.is_file():
+        print(f"Warning: {groups_csv} not found; the 'group' column will be empty. "
+              "Run src/grouping_pipeline/group_frames.py on the binary dataset first.")
+        return {}
+    df = pd.read_csv(groups_csv, usecols=["image_name", "group"])
+    return dict(zip(df["image_name"].astype(str), df["group"].astype(str)))
+
+
 def generate_dataset(
     ad_images_dir: Union[str, Path],
     metadata_path: Union[str, Path],
@@ -50,6 +60,7 @@ def generate_dataset(
     tip_values: Optional[list] = None,
     non_ad_images_dir: Optional[Union[str, Path]] = None,
     non_ad_ratio: float = 0.0,
+    groups_csv: Optional[Union[str, Path]] = None,
 ) -> int:
     """Build a self-contained multiclass dataset (class = metadata `tip`) from the binary dataset's frames.
 
@@ -60,6 +71,8 @@ def generate_dataset(
     - `tip_values`: if given, frames whose tip is not in this list are skipped
     - `non_ad_images_dir` / `non_ad_ratio`: adds class `NON_AD_TIP` with
       `round(non_ad_ratio * largest ad class)` frames sampled evenly from this folder
+    - `groups_csv`: binary `result/groups.csv`; its creative/video group is copied
+      to the `group` column so splits can keep each group in one split
 
     Source images are only copied, never moved. Returns 0 on success, non-zero on error.
     """
@@ -133,7 +146,18 @@ def generate_dataset(
     if not records:
         print("Warning: no matching records found; CSV will be empty.")
 
-    df_out = pd.DataFrame(records, columns=["image_name", "tip", "tip_label"])
+    groups = load_groups(Path(groups_csv) if groups_csv is not None else None)
+    for record in records:
+        group = groups.get(record["image_name"])
+        if group is None and record["tip"] == NON_AD_TIP:
+            match = NON_AD_PATTERN.match(record["image_name"])
+            group = f"non_ad_{match.group(1)}" if match else None
+        record["group"] = group
+    ungrouped = sum(r["group"] is None for r in records)
+    if groups and ungrouped:
+        print(f"Warning: {ungrouped} frames are not in {groups_csv}; re-run group_frames.py.")
+
+    df_out = pd.DataFrame(records, columns=["image_name", "tip", "tip_label", "group"])
 
     try:
         if images_out.exists():

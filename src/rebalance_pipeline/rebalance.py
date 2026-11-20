@@ -11,7 +11,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Subfolders under result/ that hold frames already pulled out of the active
 # dataset (by the dedup pipeline, the review GUI, or a previous rebalance run).
 # They must never be counted or moved again.
-EXCLUDED_DIRS = {"discarded", "duplicates", "excess"}
+EXCLUDED_DIRS = {"discarded", "duplicates", "excess", "capped"}
 
 
 # Same as the other pipelines: look for config.json in the CWD and, if it isn't
