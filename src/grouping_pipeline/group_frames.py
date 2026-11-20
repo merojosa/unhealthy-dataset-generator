@@ -222,9 +222,8 @@ def main() -> None:
     for group, name, path in moves:
         destination = capped_ad_dir / name
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            path.unlink(missing_ok=True)
-        elif path.exists():
+        if path.exists():
+            # Overwrites a stale copy left in capped/ rather than deleting the source frame.
             shutil.move(str(path), str(destination))
 
     if moves:
