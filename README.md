@@ -1,206 +1,187 @@
 # Unhealthy Dataset Generator
 
-A pipeline to generate a binary dataset with the following two classes:
+Builds image datasets of junk-food TV ads from recorded videos and a `metadata.xlsx` ad log:
 
-- Junk food ad
-- Non junk food ad
+- **Binary**: `ad` vs `non_ad` frames (one frame per second).
+- **Tip multiclass**: one class per ad type (`tip`), plus a non-ad class `0`.
+- **Marketing multilabel**: ad frames labelled with the `rpr`–`rie` strategy columns.
 
-The pipeline iterates through a metadata sheet, takes the start and end times, extracts one frame per second, and saves it in an "ad" directory. For the "non_ad" directory, it takes frames outside the start and end times of the metadata.
+It also includes tools to review, de-duplicate, group (to prevent train/test leakage) and rebalance the frames.
 
-## Get started
+## Setup
 
-- Initiate a [virtual environment](https://www.freecodecamp.org/news/how-to-setup-virtual-environments-in-python/):
+1. Create and activate a virtual environment:
 
-```
-python -m venv unhealthy-dataset-generator-env
-```
+   ```
+   python -m venv unhealthy-dataset-generator-env
+   unhealthy-dataset-generator-env\Scripts\activate.bat          # Windows
+   source ./unhealthy-dataset-generator-env/bin/activate         # macOS/Linux
+   ```
 
-Windows:
+2. Install Tesseract OCR (used to read the on-screen clock). Check it with `tesseract --version`.
+   - Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki), and add its folder to `PATH`. If it is not in `C:\Program Files\Tesseract-OCR`, set `TESSDATA_PREFIX` to its `tessdata` folder.
+   - macOS: `brew install tesseract`
+   - Linux: `sudo apt install tesseract-ocr libtesseract-dev libleptonica-dev`
 
-```
-unhealthy-dataset-generator-env\Scripts\activate.bat
-```
+3. Install Python dependencies:
 
-MacOS:
+   ```
+   pip install -r requirements.txt
+   ```
 
-```
-source ./unhealthy-dataset-generator-env/bin/activate
-```
+   - Windows: `tesserocr` has no PyPI wheel. First install the one matching your Python from [tesserocr-windows_build](https://github.com/simonflueckiger/tesserocr-windows_build/releases), e.g. for Python 3.14:
+     ```
+     pip install https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.10.0-tesseract-5.5.2/tesserocr-2.10.0-cp314-cp314-win_amd64.whl
+     ```
+   - GPU (optional, for CLIP in dedup/grouping): install the CUDA build of `torch` first, e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
+   - Dedup and grouping download the CLIP model (`clip-ViT-B-32`) on first run, so they need internet the first time.
 
-- Install the Tesseract OCR binary. The pipeline uses it (via the in-process `tesserocr` binding) to read the timestamp overlay on each extracted frame and discard frames whose on-screen time falls outside the ad window.
-  - Windows: install from the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki). Add the install directory (e.g. `C:\Program Files\Tesseract-OCR`) to `PATH`. The pipeline also looks for `tessdata` at `C:\Program Files\Tesseract-OCR\tessdata` (the default install location); if you installed elsewhere, set the `TESSDATA_PREFIX` environment variable to your `tessdata` directory.
-  - macOS: `brew install tesseract`
-  - Linux: `sudo apt install tesseract-ocr libtesseract-dev libleptonica-dev` (or the equivalent for your distro — `tesserocr` needs the dev headers to install).
-  - Verify with `tesseract --version`.
+4. Copy `default_config.json` to `config.json` and set `path.videos`, `path.dataset` and one `videos_metadata` entry per video (see [Config](#config)).
 
-- Install Python dependencies: `pip install -r requirements.txt`
+## Architecture
 
-  On **Windows**, `tesserocr` does not have a wheel on PyPI and needs the Tesseract dev libraries to build from source, which the UB Mannheim binary install doesn't ship. Use the prebuilt wheel matching your Python version from [simonflueckiger/tesserocr-windows_build](https://github.com/simonflueckiger/tesserocr-windows_build/releases) **before** running `pip install -r requirements.txt`. For Python 3.14:
+```mermaid
+flowchart LR
+    IN[("videos + metadata.xlsx")] --> GEN["Generator"]
+    GEN --> BIN
 
-  ```
-  pip install https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.10.0-tesseract-5.5.2/tesserocr-2.10.0-cp314-cp314-win_amd64.whl
-  pip install -r requirements.txt
-  ```
+    subgraph BIN["Binary dataset (result/)"]
+        direction TB
+        AD["ad/ + non_ad/"] --> REV["Review"] --> DED["Dedup"] --> GRP["Grouping"] --> REB["Rebalance"]
+        GRP --> GCSV[["groups.csv"]]
+    end
 
-  On **macOS / Linux**, `pip install -r requirements.txt` builds `tesserocr` from source against the Tesseract dev headers installed in the previous step.
-
-  The duplicate-removal pipeline (see [Utility scripts](#utility-scripts)) also installs `sentence-transformers` and `torch` for CLIP embeddings; the CLIP model is downloaded automatically on first use. The core generator does not need them. On **Windows**, `pip install torch` installs the CPU-only build — if you want to use a GPU, install the matching CUDA wheel **before** `pip install -r requirements.txt`, e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
-
-- Execute the script: `python -m src.dataset_generator_pipeline.main` (run from the repo root — paths in the config are resolved relative to the current working directory)
-
-## Instructions
-
-- The entire project works with a config.json. Check `default_config.json` to understand the structure.
-  - `path` is where the script will read the `metadata.xlsx` and videos. It will look something like this:
-    ![alt text](assets/path_structure.png)
-    - `path.dataset` (default `./binary-dataset`): root of the binary `ad`/`non_ad` dataset. `path.multilabel_dataset` (default `./multi-strategies-dataset`): output root of the marketing-strategies multilabel dataset. `path.multiclass_dataset` (default `./tip-multiclass-dataset`): output root of the `tip` multiclass dataset.
-  - `tip_values`: list of integers. A metadata row is processed only if its `tip` column value *starts with* `"N="` for some N in this list — e.g. `[2,3,4,5,6,7,8]` skips any row whose `tip` starts with `"1="`.
-  - `non_ad_ratio`: float (default `1.0`). Number of non-ad frames to generate as a multiple of the total ad frame count — e.g. `1.0` produces one non-ad frame per ad frame, `2.0` produces twice as many.
-  - `non_ad_gap_seconds`: int (default `30`). Seconds before and after each ad window that are also excluded when selecting non-ad frame candidates, to avoid borderline content.
-  - `tv_channels_mapping`: maps the first character of the `can` column to a filename suffix. For example, `"1" → "DN"` means a row with `can` starting with `1` reads `{date}_DN_processed.mp4`. Add one entry per channel.
-  - `videos_metadata`: one entry per video file. `start_time` (`HH:MM:SS`) is the wall-clock time the recording begins — the pipeline subtracts this from the ad's `hin`/`hfi` times to find the frame offset inside the video. `crop` (`top`/`bottom`/`left`/`right`, in pixels) trims each extracted frame; it is optional and can be omitted if no crop is needed (use `test_custom_crop_params.py` to find the right values).
-  - `duplicate_images_removal`: defaults for the duplicate-removal script — `combined_threshold` (the score at/above which two frames are treated as duplicates), `clip_weight` (how much weight the combined score gives CLIP similarity vs. the perceptual hash, 0–1), `hash_size`, `batch_size`, and `chunk_size`. Each can be overridden per run with a command-line flag.
-  - `rebalance.target_ratio`: float (default `1.0`). The desired `non_ad : ad` ratio the rebalance script trims toward.
-  - `grouping`: defaults for the leakage-grouping script. `max_frames_per_creative` (default `50`, `0` disables the cap) is the most active ad frames kept per creative group. `merge_threshold` (default `0.945`) is the CLIP centroid cosine similarity at or above which two creatives are merged. `batch_size` is the CLIP batch size.
-- To check a particular video, you should populate `metadata.xlsx` with the data related to the video. For example, if you want to test `2024-04-06_DN.mp4`, you should filter "can" to 1 and "fec" to 06-04-24.
-- The output of the script will be on `path/result`. Every image has the following structure: video name where the it was extracted + id from `metadata.xlsx`("cod" column) + counter id + .jpg.
-
-## Expected directory layout
-
-```
-{path.dataset}/
-  metadata.xlsx
-  result/                   # created by the pipeline, wiped on each run
-    ad/
-    non_ad/
-    discarded/              # created by review_dataset.py, never wiped automatically
-      ad/
-      non_ad/
-    duplicates/             # created by image_similarity.py (+ duplicates_manifest.csv)
-    excess/                 # created by rebalance.py (+ rebalance_manifest.csv)
-    capped/ad/              # created by group_frames.py (+ capped_manifest.csv)
-    groups.csv              # created by group_frames.py
-{path.multilabel_dataset}/  # created by marketing_strategies_multilabel_dataset_generator/main.py
-  images/                   # copies of the labelled ad frames, wiped on each run
-  marketing_multilabel_dataset.csv
-{path.multiclass_dataset}/  # created by tip_multiclass_dataset_generator/main.py
-  images/                   # copies of the labelled ad frames, wiped on each run
-  tip_multiclass_dataset.csv
-{path.videos}/
-  YYYY-MM-DD_{channel}_processed.mp4
+    REB --> MC["Tip multiclass dataset"]
+    REB --> ML["Marketing multilabel dataset"]
+    GCSV -- "group" --> MC
 ```
 
-Output filenames follow the pattern `{video}_{cod}_{counter}.jpg`, where `cod` is the row ID from the `cod` column of `metadata.xlsx`.
+**Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group`; the multilabel CSV has no `group` column, so join it with `groups.csv`.
 
-## Utility scripts
+## Usage
 
-### Tuning crop parameters (`src/misc/test_custom_crop_params.py`)
+Run every command from the repo root. Each script reads `config.json` (falls back to `default_config.json`).
 
-Helps you find the right crop values for `videos_metadata.<filename>.crop` in `config.json`. Pass a video path and crop amounts (in pixels) for each side — it opens a random frame from the video with that crop applied so you can judge the result visually. Once the frame looks right, copy the printed `"crop": {...}` snippet into your config.
 
-```
-python src/misc/test_custom_crop_params.py --video_path <path> --top <n> --bottom <n> --left <n> --right <n>
-```
+| Step | Command | What it does |
+| --- | --- | --- |
+| 1. Generate | `python src/dataset_generator_pipeline/main.py` | Builds `result/ad/` and `result/non_ad/`. **Wipes `result/` first.** |
+| 2. Review | `python src/misc/review_dataset.py` | GUI to discard bad frames into `result/discarded/`. |
+| 3. Dedup | `python src/duplicate_images_removal_pipeline/image_similarity.py` | Moves near-duplicate frames to `result/duplicates/`. |
+| 4. Group | `python src/grouping_pipeline/group_frames.py` | Assigns leakage groups and caps frames per ad creative. |
+| 5. Rebalance | `python src/rebalance_pipeline/rebalance.py` | Trims the over-represented class to `rebalance.target_ratio`. |
+| 6. Multiclass | `python -m src.tip_multiclass_dataset_generator.main` | Builds the tip multiclass dataset. |
+| 7. Multilabel | `python -m src.marketing_strategies_multilabel_dataset_generator.main` | Builds the marketing multilabel dataset. |
 
-### Reviewing the generated dataset (`src/misc/review_dataset.py`)
+Steps 2–7 are optional, but keep this order (e.g. multiclass needs `groups.csv` from step 4). Steps 2–5 move frames into subfolders of `result/` instead of deleting them. Steps 3–5 accept `--dry-run`.
 
-A desktop GUI for manually inspecting and cleaning the images produced by the pipeline. Run it from the repo root after the pipeline has finished:
+### Generator
 
-```
-python src/misc/review_dataset.py
-```
+For each `metadata.xlsx` row (first sheet) whose `tip` is in `tip_values`, it extracts one frame per second of the ad. It reads the burned-in clock with OCR to drop frames outside the ad window. Then it samples `non_ad` frames away from any ad.
 
-It lets you browse ad frames (grouped by ad) and non-ad frames, select bad images, and move them to a `result/discarded/` folder. Discarded images are not deleted and can be restored.
+Output names (other scripts parse these):
+- Ad: `{video}_{cod}_{counter}.jpg`. `cod` must be 5 digits, or later steps skip the frame.
+- Non-ad: `{date}_{channel}_non_ad_{counter}.jpg`.
 
-### Removing duplicate frames (`src/duplicate_images_removal_pipeline/image_similarity.py`)
+### Review GUI
 
-Extracting one frame per second produces many near-identical frames. This script finds visually similar frames — using a combination of CLIP embeddings and a perceptual hash — groups them, keeps one frame per group, and moves the rest to `result/duplicates/`. Run it from the repo root:
+Browses ad frames by ad and non-ad frames by page. Keys: `A` select all, `D` discard and advance, `H`/`L` or arrows to navigate, `Ctrl+Z` undo.
 
-```
-python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run]
-```
-
-It scans `{path.dataset}/result` by default. Pass `--dry-run` to preview what would be moved without touching any files. The thresholds come from the `duplicate_images_removal` config block and can be overridden per run (`--combined-threshold`, `--clip-weight`, `--hash-size`, `--batch-size`, `--chunk-size`). Moved frames keep their relative path under `result/duplicates/` and are recorded in `duplicates_manifest.csv`, so the operation is reversible.
-
-### Rebalancing the classes (`src/rebalance_pipeline/rebalance.py`)
-
-After reviewing and de-duplicating, the `ad` and `non_ad` counts may no longer match. This script trims the larger class (it never duplicates the smaller one) to reach the desired `non_ad : ad` ratio, keeping frames evenly spread across the sequence and moving the surplus to `result/excess/`. Run it from the repo root:
+### Dedup
 
 ```
-python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N]
+python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run] [--combined-threshold N] [--clip-weight N] [--hash-size N] [--batch-size N] [--chunk-size N]
 ```
 
-It operates on `{path.dataset}/result` by default and uses `rebalance.target_ratio` from the config unless `--target-ratio` is given. As with the other tools, frames are moved (recorded in `rebalance_manifest.csv`), not deleted.
+Compares frames with CLIP + a perceptual hash and keeps one per similar group. Writes `duplicates_manifest.csv`.
 
-### Grouping frames to prevent split leakage (`src/grouping_pipeline/group_frames.py`)
+### Grouping (data leakage prevention)
 
-The same commercial airs many times under different metadata rows (`cod`). Splitting by row would therefore put near-identical frames in train, validation and test. This script assigns every frame a **group** that training scripts should keep inside a single split (for example with scikit-learn's `GroupShuffleSplit` or `StratifiedGroupKFold`):
-
-- **Ad frames** are grouped by creative. The metadata `nom` is normalized (accents, case, spaces and punctuation removed). Creatives whose mean CLIP embeddings reach `grouping.merge_threshold` are then merged, which catches typos in `nom` and alternate cuts of the same campaign. Only per-creative centroids are compared, so a single black frame or channel logo can't chain unrelated ads together.
-- **Non-ad frames** get one group per source video.
-
-It also caps each ad group at `grouping.max_frames_per_creative` frames, keeping survivors evenly spaced across airings, so one heavily aired spot doesn't dominate its class. The surplus is moved (not deleted) to `result/capped/ad/` and recorded in `capped_manifest.csv`. Run it after dedup and review, and before rebalance and the multiclass generator:
+Gives every frame a `group` (see [Data leakage](#architecture)). Split with e.g. scikit-learn's `GroupShuffleSplit` or `StratifiedGroupKFold`.
 
 ```
 python src/grouping_pipeline/group_frames.py [result] [--dry-run] [--max-frames N] [--merge-threshold N] [--batch-size N]
 ```
 
-It writes `result/groups.csv` with the columns `image_name`, `label`, `group`, `creative` and `capped`, and prints every merged creative pair so you can audit the merges. Re-running it is safe: frames that were already capped still count toward their group, so nothing is trimmed twice.
+- Ad frames: grouped by the normalized metadata `nom`. Creatives with similar average CLIP embeddings are merged (catches typos and alternate cuts).
+- Non-ad frames: one group per source video.
+- Ad groups above `max_frames_per_creative` are trimmed evenly; extras go to `result/capped/ad/`.
 
-### Generating a multilabel dataset (`src/marketing_strategies_multilabel_dataset_generator/main.py`)
+Writes `result/groups.csv` (`image_name`, `label`, `group`, `creative`, `capped`). Safe to re-run.
 
-This script builds a self-contained multilabel dataset by reading the ad images already extracted by the main generator, joining them with the metadata workbook, and copying the labelled images into their own folder. It is meant to run after the binary dataset has been produced.
-
-Run it from the repository root:
+### Rebalance
 
 ```
-python -m src.marketing_strategies_multilabel_dataset_generator.main [path/to/binary_dataset_root] [--output path/to/multilabel_root]
+python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N] [--excess-dir DIR]
 ```
 
-The input defaults to `path.dataset` and the output to `path.multilabel_dataset`. Pass the binary dataset root, not the `result` folder or the individual `ad`/`non_ad` folders. It must contain:
+Trims whichever class is above `target_ratio`, moving extras to `result/excess/` and keeping survivors evenly spread across the sorted file list.
+
+### Tip multiclass dataset
+
+```
+python -m src.tip_multiclass_dataset_generator.main [binary_root] [--output DIR] [--non-ad-ratio N]
+python -m src.tip_multiclass_dataset_generator.check_dataset [multiclass_root]
+```
+
+- Class = number before `=` in `tip` (`"2=..."` → `2`). Only `tip_values` are kept.
+- Class `0` = non-ad frames, sized `multiclass.non_ad_ratio` × the largest ad class. `--non-ad-ratio 0` disables it.
+- Output: `images/` (copies, wiped each run) and `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`, `group`).
+- `group` comes from `result/groups.csv`, so run the grouping step first.
+- The checker prints the class distribution and fails on missing groups.
+
+### Marketing multilabel dataset
+
+```
+python -m src.marketing_strategies_multilabel_dataset_generator.main [binary_root] [--output DIR]
+python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [multilabel_root]
+```
+
+Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie`).
+
+For both dataset generators, pass the binary dataset root (not `result/`). The binary dataset is never modified. Grouping and both generators read the `Base combinada` sheet if it exists, otherwise the first sheet.
+
+### Crop tuning
+
+```
+python src/misc/test_custom_crop_params.py --video_path <path> --top N --bottom N --left N --right N
+```
+
+Shows a cropped frame and prints a `"crop": {...}` snippet to paste into `videos_metadata`.
+
+## Config
+
+See `default_config.json`. The generator requires every key in it to exist in `config.json` with the same type.
+
+- `path.videos`: folder with the `.mp4` recordings.
+- `path.dataset`: binary dataset root (with `metadata.xlsx`). `path.multiclass_dataset` / `path.multilabel_dataset`: output folders.
+- `tip_values`: `tip` numbers to include (e.g. `[2, ..., 8]` skips `1=`).
+- `non_ad_ratio`: non-ad frames per ad frame in the binary dataset.
+- `non_ad_gap_seconds`: seconds around each ad excluded from non-ad sampling.
+- `tv_channels_mapping`: first digit of `can` → channel in the video name (`"1": "DN"` → `{date}_DN_processed.mp4`).
+- `videos_metadata.<file>`: `start_time` (`HH:MM:SS`, when the recording starts) and optional `crop` (`top`/`bottom`/`left`/`right` px).
+- `duplicate_images_removal`: `combined_threshold`, `clip_weight` (0–1, CLIP vs hash), `hash_size`, `batch_size`, `chunk_size`.
+- `grouping`: `max_frames_per_creative` (`0` = no cap), `merge_threshold` (CLIP similarity to merge creatives), `batch_size`.
+- `rebalance.target_ratio`: desired `non_ad : ad` ratio.
+- `multiclass.non_ad_ratio`: size of class `0` relative to the largest ad class.
+
+`metadata.xlsx` columns used: `cod` (row id), `tip` (ad type), `can` (channel), `fec` (date), `hin`/`hfi` (ad start/end), `nom` (ad name, for grouping), `rpr`–`rie` (multilabel labels). To test one video, filter the sheet to its `can` and `fec`.
+
+## Directory layout
 
 ```
 {path.dataset}/
   metadata.xlsx
-  result/
-    ad/        # extracted ad frames, used to build the labels
-```
-
-Requirements for the inputs:
-
-- `metadata.xlsx` is read from the `Base combinada` sheet if present, otherwise the first sheet. It must have a `cod` column and the label columns `rpr` through `rie` (in that order).
-- Ad frame filenames must match `*_<cod>_<n>.jpg`, where `<cod>` is 5 digits. Frames that do not match, or whose `cod` is not in the workbook, are skipped.
-
-Generated output:
-
-- `{path.multilabel_dataset}/images/`: copies of every labelled ad frame. This folder is wiped and rebuilt on each run. The binary dataset is never modified.
-- `{path.multilabel_dataset}/marketing_multilabel_dataset.csv`, with an `image_name` column and the `rpr`–`rie` columns copied from the matching metadata row (one row per image)
-
-To sanity-check the CSV against the copied images (defaults to `path.multilabel_dataset`):
-
-```
-python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [path/to/multilabel_root]
-```
-
-### Generating a tip multiclass dataset (`src/tip_multiclass_dataset_generator/main.py`)
-
-Works like the multilabel generator, but each ad frame gets a single class: the numeric prefix of the metadata `tip` column (`"2=Productos..."` → `2`). Frames whose `tip` is not in `tip_values` are skipped, so `tip=1` (non-food products) is excluded, just as it is in the binary dataset.
-
-It also adds a synthetic class `0` ("No es anuncio") with frames from `result/non_ad/`. Its size is `round(multiclass.non_ad_ratio × largest ad class)` (default `0.5`), capped at the frames available. The frames are sampled evenly across the time-ordered sequence, so the result is reproducible. Override it with `--non-ad-ratio N`, or pass `0` to disable the class.
-
-```
-python -m src.tip_multiclass_dataset_generator.main [path/to/binary_dataset_root] [--output path/to/multiclass_root] [--non-ad-ratio N]
-```
-
-The input defaults to `path.dataset` and the output to `path.multiclass_dataset`. The input layout and filename requirements are the same as for the multilabel generator, but the workbook only needs the `cod` and `tip` columns.
-
-Generated output:
-
-- `{path.multiclass_dataset}/images/`: copies of every labelled ad frame and the sampled non-ad frames. This folder is wiped and rebuilt on each run.
-- `{path.multiclass_dataset}/tip_multiclass_dataset.csv`, with the columns `image_name`, `tip` (integer class), `tip_label` (the class description) and `group` (copied from the binary dataset's `result/groups.csv`; split by this column to avoid leakage). If `groups.csv` is missing, `group` is left empty for ad frames and the checker reports it.
-
-To sanity-check it and print the class distribution, plus frames and groups per class:
-
-```
-python -m src.tip_multiclass_dataset_generator.check_dataset [path/to/multiclass_root]
+  result/                      # wiped by the generator
+    ad/  non_ad/
+    discarded/{ad,non_ad}/     # review
+    duplicates/                # dedup (+ duplicates_manifest.csv)
+    capped/ad/  groups.csv     # grouping (+ capped_manifest.csv)
+    excess/                    # rebalance (+ rebalance_manifest.csv)
+{path.multiclass_dataset}/
+  images/  tip_multiclass_dataset.csv
+{path.multilabel_dataset}/
+  images/  marketing_multilabel_dataset.csv
+{path.videos}/
+  YYYY-MM-DD_{channel}_processed.mp4
 ```

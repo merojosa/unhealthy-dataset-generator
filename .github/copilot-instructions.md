@@ -11,15 +11,17 @@ OCR uses `tesserocr` (in-process libtesseract binding). The Tesseract binary is 
 - macOS: `brew install tesseract`.
 - Linux: `sudo apt install tesseract-ocr libtesseract-dev libleptonica-dev` (dev headers needed; `tesserocr` builds from source).
 
-The dedup pipeline needs `sentence-transformers` + `torch` (CLIP `clip-ViT-B-32` downloads on first run); the core generator does not. On Windows `pip install torch` is CPU-only — for GPU, install the CUDA wheel first (e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`).
+Dedup and grouping need `sentence-transformers` + `torch` (CLIP `clip-ViT-B-32` downloads on first run, so the first run needs internet); the core generator does not.
+
+Copy `default_config.json` to `config.json` and set `path.videos`, `path.dataset`, and a `videos_metadata` entry per video. To test a single video, filter `metadata.xlsx` to its `can` + `fec`. On Windows `pip install torch` is CPU-only — for GPU, install the CUDA wheel first (e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`).
 
 ## Commands
 
 **Run everything from the repo root** — `config.json`/`default_config.json` and relative dataset paths resolve against CWD.
 
 - Generator: `python src/dataset_generator_pipeline/main.py`
-  - Don't use `python -m src.dataset_generator_pipeline.main` (still shown in README). Since the module moved into its folder, `-m` puts only the CWD on `sys.path`, so the bare `from generator import …` fails with `ModuleNotFoundError`.
-- Post-processing (run manually after the generator, in any order):
+  - Don't use `python -m src.dataset_generator_pipeline.main`. Since the module moved into its folder, `-m` puts only the CWD on `sys.path`, so the bare `from generator import …` fails with `ModuleNotFoundError`.
+- Post-processing (run manually after the generator, in the README order: review → dedup → group → rebalance → multiclass/multilabel):
   - Review GUI: `python src/misc/review_dataset.py` — browses `result/ad/` by ad batch and `result/non_ad/` by page. Keys: `A` select all, `D` discard & advance, `H`/`L` or arrows navigate, `Ctrl+Z` undo.
   - Dedup: `python src/duplicate_images_removal_pipeline/image_similarity.py [folder] [--dry-run] [--combined-threshold N] [--clip-weight N] [--hash-size N] [--batch-size N] [--chunk-size N]` (defaults to `{dataset}/result`; flags override the `duplicate_images_removal` config block).
   - Rebalance: `python src/rebalance_pipeline/rebalance.py [result] [--dry-run] [--target-ratio N] [--excess-dir DIR]`
@@ -59,7 +61,12 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - **Config schema**: `default_config.json` is the source of truth. `main.validate_config` recursively requires every default key in `config.json` with the same Python type, so add any new key there first with a realistic default. All scripts load `config.json` from CWD, falling back to `default_config.json`.
 - **Bare imports** inside `src/dataset_generator_pipeline/` (`from processor import process_row`). They rely on the script's own directory being on `sys.path`. Don't convert to relative imports without testing the entrypoint.
 - **Module-level `cv2.VideoCapture` cache** (`video_capture`, `fps`, `total_frames`, `previous_video_path` in `processor.py` and `non_ad_generator.py`) reuses the open video across consecutive rows. Keep an equivalent cache if refactoring, or throughput collapses on large metadata files.
-- **Output filenames** `{video}_{cod}_{counter}.jpg` are parsed downstream (multilabel `cod` regex, review GUI grouping by ad batch) — keep the format stable.
+- **Output filenames** are parsed downstream — keep the formats stable:
+  - Ad: `{video}_{cod}_{counter}.jpg`; `cod` must be 5 digits or downstream regexes (`_(\d{5})_(\d+)\.jpg$` in multilabel/multiclass/grouping) skip the frame. The review GUI groups by ad batch from this name.
+  - Non-ad: `{date}_{channel}_non_ad_{counter}.jpg`; `NON_AD_PATTERN` (`^(.*)_non_ad_(\d+)\.jpg$`) derives the per-video group `non_ad_{video}`.
+- **Cross-script imports**: `group_frames.py` inserts `src/` into `sys.path` and imports `evenly_spaced_keep_indices` from `rebalance_pipeline.rebalance` plus `load_image`/`UnionFind` from `duplicate_images_removal_pipeline.image_similarity`. Keep those names/signatures stable when editing either script.
+- **Excel sheet selection**: grouping and both dataset generators read sheet `Base combinada` if present, else the first sheet (`ValueError` fallback); the main generator always reads the first sheet.
+- **Leakage-safe splits**: train/test splits must be by `group` (e.g. `GroupShuffleSplit`/`StratifiedGroupKFold`). The multiclass CSV carries `group`; the multilabel CSV does not, so join it with `result/groups.csv` on `image_name`.
 
 ### Config keys
 - `path.dataset` (`./binary-dataset`): root containing `metadata.xlsx`; binary output goes to `{dataset}/result/`. `path.multilabel_dataset` (`./multi-strategies-dataset`): multilabel output root. `path.multiclass_dataset` (`./tip-multiclass-dataset`): tip multiclass output root. `path.videos`: folder of `.mp4` files.
@@ -73,7 +80,7 @@ There is no test suite, linter, or formatter. Validate changes by running the af
 - `grouping`: `max_frames_per_creative` (int, 50; 0 = no cap), `merge_threshold` (float, 0.945 — calibrated: pairs ≥0.945 were same brand/campaign, false merges start ≈0.94), `batch_size`.
 
 ### Metadata columns (`metadata.xlsx`)
-`tip` (type filter), `can` (channel code), `fec` (date; `datetime` or a format in `processor.formats`), `hin`/`hfi` (ad start/end `datetime.time`), `cod` (row id embedded in filenames), `rpr`…`rie` (multilabel marketing labels).
+`tip` (type filter), `can` (channel code), `fec` (date; `datetime` or a format in `processor.formats`), `hin`/`hfi` (ad start/end `datetime.time`), `cod` (row id embedded in filenames), `nom` (ad name, used for leakage grouping), `rpr`…`rie` (multilabel marketing labels).
 
 ### On-disk layout
 ```
