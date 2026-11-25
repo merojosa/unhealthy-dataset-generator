@@ -43,20 +43,16 @@ It also includes tools to review, de-duplicate, group (to prevent train/test lea
 ```mermaid
 flowchart LR
     IN[("videos + metadata.xlsx")] --> GEN["Generator"]
-    GEN --> BIN
+    GEN --> AD
 
-    subgraph BIN["Post-processing (result/)"]
+    subgraph POST["Post-processing (result/)"]
         direction TB
-        AD["ad/ + non_ad/"] --> REV["Review"] --> DED["Dedup"] --> GRP["Grouping"] --> REB["Rebalance"]
-        GRP --> GCSV[["groups.csv"]]
+        AD["ad/ + non_ad/"] --> REV["Review"] --> DED["Dedup"] --> GRP["Grouping<br/>writes groups.csv"] --> REB["Rebalance"]
     end
 
-    REB --> BD[("Binary dataset<br/>result/ad + result/non_ad")]
+    REB --> BD[("Binary dataset")]
     REB --> MC[("Tip multiclass dataset")]
     REB --> ML[("Marketing multilabel dataset")]
-    GCSV -- "group" --> BD
-    GCSV -- "group" --> MC
-    GCSV -. "join on image_name" .-> ML
 ```
 
 **Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group`; the multilabel CSV has no `group` column, so join it with `groups.csv`.
