@@ -45,15 +45,18 @@ flowchart LR
     IN[("videos + metadata.xlsx")] --> GEN["Generator"]
     GEN --> BIN
 
-    subgraph BIN["Binary dataset (result/)"]
+    subgraph BIN["Post-processing (result/)"]
         direction TB
         AD["ad/ + non_ad/"] --> REV["Review"] --> DED["Dedup"] --> GRP["Grouping"] --> REB["Rebalance"]
         GRP --> GCSV[["groups.csv"]]
     end
 
-    REB --> MC["Tip multiclass dataset"]
-    REB --> ML["Marketing multilabel dataset"]
+    REB --> BD[("Binary dataset<br/>result/ad + result/non_ad")]
+    REB --> MC[("Tip multiclass dataset")]
+    REB --> ML[("Marketing multilabel dataset")]
+    GCSV -- "group" --> BD
     GCSV -- "group" --> MC
+    GCSV -. "join on image_name" .-> ML
 ```
 
 **Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group`; the multilabel CSV has no `group` column, so join it with `groups.csv`.
