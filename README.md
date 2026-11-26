@@ -55,7 +55,7 @@ flowchart LR
     REB --> ML[("Marketing multilabel dataset")]
 ```
 
-**Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group`; the multilabel CSV has no `group` column, so join it with `groups.csv`.
+**Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group` (both the multiclass and multilabel CSVs carry a `group` column).
 
 ## Usage
 
@@ -136,7 +136,10 @@ python -m src.marketing_strategies_multilabel_dataset_generator.main [binary_roo
 python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [multilabel_root]
 ```
 
-Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie`).
+Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie` + `group`).
+
+- `group` comes from `result/groups.csv`, so run the grouping step first.
+- The checker fails on a missing `group` column or empty groups.
 
 For both dataset generators, pass the binary dataset root (not `result/`). The binary dataset is never modified. Grouping and both generators read the `Base combinada` sheet if it exists, otherwise the first sheet.
 

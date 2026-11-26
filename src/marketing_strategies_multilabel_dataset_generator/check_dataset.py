@@ -78,6 +78,17 @@ def check_dataset(csv_path: Path, images_dir: Path) -> int:
         print("Error: duplicate image_name entries found in CSV.")
         problems += 1
 
+    if 'group' not in df.columns:
+        print("Error: 'group' column missing; regenerate the dataset after running group_frames.py.")
+        problems += 1
+    else:
+        null_groups = int(df['group'].isna().sum())
+        sizes = df['group'].value_counts()
+        print(f"Groups: {len(sizes)} (max frames per group: {sizes.max() if len(sizes) else 0})")
+        if null_groups:
+            print(f"Error: {null_groups} rows have an empty 'group'; run group_frames.py and regenerate.")
+            problems += 1
+
     if problems == 0:
         print("OK: multilabel dataset looks consistent.")
         return 0

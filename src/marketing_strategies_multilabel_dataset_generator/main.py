@@ -77,7 +77,9 @@ def main() -> None:
     ad_dir = Path(args.folder) / "result" / "ad"
     metadata_path = Path(args.folder) / "metadata.xlsx"
 
-    sys.exit(generate_dataset(ad_dir, metadata_path, args.output))
+    groups_csv = Path(args.folder) / "result" / "groups.csv"
+
+    sys.exit(generate_dataset(ad_dir, metadata_path, args.output, groups_csv=groups_csv))
 
 
 if __name__ == "__main__":

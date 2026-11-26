@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import pandas as pd
 
@@ -10,13 +10,30 @@ CSV_NAME = "marketing_multilabel_dataset.csv"
 IMAGES_DIR = "images"
 
 
-def generate_dataset(ad_images_dir: Union[str, Path], metadata_path: Union[str, Path], output_dir: Union[str, Path]) -> int:
+def load_groups(groups_csv: Optional[Path]) -> dict:
+    """image_name -> leakage-safe group from the binary dataset's result/groups.csv (empty if absent)."""
+    if groups_csv is None or not groups_csv.is_file():
+        print(f"Warning: {groups_csv} not found; the 'group' column will be empty. "
+              "Run src/grouping_pipeline/group_frames.py on the binary dataset first.")
+        return {}
+    df = pd.read_csv(groups_csv, usecols=["image_name", "group"])
+    return dict(zip(df["image_name"].astype(str), df["group"].astype(str)))
+
+
+def generate_dataset(
+    ad_images_dir: Union[str, Path],
+    metadata_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    groups_csv: Optional[Union[str, Path]] = None,
+) -> int:
     """Build a self-contained multilabel dataset from the binary dataset's ad frames.
 
     - `ad_images_dir`: folder containing ad images (jpg), e.g. `{binary}/result/ad`
     - `metadata_path`: path to metadata.xlsx
     - `output_dir`: dataset root to write; gets `images/` (copies of every labelled
       ad frame, wiped on each run) and `marketing_multilabel_dataset.csv`
+    - `groups_csv`: binary `result/groups.csv`; its creative group is copied to the
+      `group` column so splits can keep each group in one split
 
     Source images are only copied, never moved. Returns 0 on success, non-zero on error.
     """
@@ -95,7 +112,14 @@ def generate_dataset(ad_images_dir: Union[str, Path], metadata_path: Union[str, 
     if not multilabel_records:
         print("Warning: no matching records found; CSV will be empty.")
 
-    df_multilabel = pd.DataFrame(multilabel_records)
+    groups = load_groups(Path(groups_csv) if groups_csv is not None else None)
+    for record in multilabel_records:
+        record["group"] = groups.get(record["image_name"])
+    ungrouped = sum(r["group"] is None for r in multilabel_records)
+    if groups and ungrouped:
+        print(f"Warning: {ungrouped} frames are not in {groups_csv}; re-run group_frames.py.")
+
+    df_multilabel = pd.DataFrame(multilabel_records, columns=["image_name", *cols_to_use, "group"])
 
     try:
         if images_out.exists():
@@ -126,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("ad_dir", help="Folder containing ad images")
     parser.add_argument("metadata", help="Path to metadata.xlsx")
     parser.add_argument("output", help="Output dataset folder (gets images/ and the CSV)")
+    parser.add_argument("--groups", help="Path to the binary dataset's result/groups.csv")
     args = parser.parse_args()
 
-    raise SystemExit(generate_dataset(args.ad_dir, args.metadata, args.output))
+    raise SystemExit(generate_dataset(args.ad_dir, args.metadata, args.output, groups_csv=args.groups))
