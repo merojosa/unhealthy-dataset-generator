@@ -26,6 +26,14 @@
       "seed": 42
     }
   },
+  "multilabel": {
+    "augmentation": {
+      "min_train_share": 0.70,
+      "target_train_share": 0.75,
+      "max_multiplier": 5.0,
+      "seed": 42
+    }
+  },
   "grouping": {
     "max_frames_per_creative": 50,
     "model": "facebook/dinov2-base",

@@ -71,7 +71,7 @@ Run every command from the repo root. Each script reads `config.json` (falls bac
 | 5. Rebalance | `python src/rebalance_pipeline/rebalance.py` | Trims the over-represented class to `rebalance.target_ratio`. |
 | 6. Multiclass | `python -m src.tip_multiclass_dataset_generator.main` | Builds the tip multiclass dataset. |
 | 7. Multilabel | `python -m src.marketing_strategies_multilabel_dataset_generator.main` | Builds the marketing multilabel dataset. |
-| 8. Zip | `python src/misc/make_zips.py` | Packs `binary-dataset.zip` and `tip-multiclass-dataset.zip` (with the augmented train set if present) at the repo root. |
+| 8. Zip | `python src/misc/make_zips.py` | Packs `binary-dataset.zip`, `tip-multiclass-dataset.zip` and `multi-strategies-dataset.zip` (with augmented train sets if present) at the repo root. |
 
 Steps 2–7 are optional, but keep this order (e.g. multiclass needs `groups.csv` from step 4). Steps 2–5 move frames into subfolders of `result/` instead of deleting them. Steps 3–5 accept `--dry-run`.
 
@@ -147,9 +147,14 @@ python -m src.tip_multiclass_dataset_generator.augment [multiclass_root] [--dry-
 ```
 python -m src.marketing_strategies_multilabel_dataset_generator.main [binary_root] [--output DIR]
 python -m src.marketing_strategies_multilabel_dataset_generator.check_dataset [multilabel_root]
+python -m src.marketing_strategies_multilabel_dataset_generator.augment [multilabel_root] [--dry-run] [--min-train-share N] [--target-train-share N] [--max-multiplier N] [--seed N]
 ```
 
-Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie` + `group`).
+Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie` + `group` + `split`).
+
+- `split`: whole groups assigned to train/val/test (70/15/15), balancing each label's positives across splits (`split.py`). Labels with fewer than 3 groups can't reach every split.
+- `augment` (optional, train only): runs only if the real train share is below `min_train_share`, then adds augmented copies until train is `target_train_share`. Sources are drawn favouring rare labels, at most `max_multiplier` uses each. Writes `augmented/` + `marketing_multilabel_augmented.csv` (main columns + `source_image`).
+- The checker fails on missing groups, groups in several splits, or a bad augmented set.
 
 - `group` comes from `result/groups.csv`, so run the grouping step first.
 - The checker fails on a missing `group` column or empty groups.
@@ -199,6 +204,7 @@ See `default_config.json`. The generator requires every key in it to exist in `c
   augmented/  tip_multiclass_augmented.csv   # optional, train only
 {path.multilabel_dataset}/
   images/  marketing_multilabel_dataset.csv
+  augmented/  marketing_multilabel_augmented.csv   # optional, train only
 {path.videos}/
   YYYY-MM-DD_{channel}_processed.mp4
 ```

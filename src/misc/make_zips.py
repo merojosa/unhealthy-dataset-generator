@@ -1,8 +1,10 @@
-"""Pack the binary and tip-multiclass datasets into uncompressed zips at the repo root.
+"""Pack the binary, tip-multiclass and multilabel datasets into uncompressed zips at the repo root.
 
-binary-dataset.zip:          ad/, non_ad/, groups.csv          (from {path.dataset}/result)
-tip-multiclass-dataset.zip:  images/, tip_multiclass_dataset.csv
-                             [+ augmented/, tip_multiclass_augmented.csv if present]
+binary-dataset.zip:            ad/, non_ad/, groups.csv          (from {path.dataset}/result)
+tip-multiclass-dataset.zip:    images/, tip_multiclass_dataset.csv
+                               [+ augmented/, tip_multiclass_augmented.csv if present]
+multi-strategies-dataset.zip:  images/, marketing_multilabel_dataset.csv
+                               [+ augmented/, marketing_multilabel_augmented.csv if present]
 """
 import json
 import zipfile
@@ -35,6 +37,7 @@ def main() -> None:
     config = load_config()
     binary = Path(config["path"]["dataset"]) / "result"
     multiclass = Path(config["path"]["multiclass_dataset"])
+    multilabel = Path(config["path"]["multilabel_dataset"])
     pack("binary-dataset.zip", [(binary / "ad", "ad"), (binary / "non_ad", "non_ad"),
                                 (binary / "groups.csv", "groups.csv")])
     pack("tip-multiclass-dataset.zip", [
@@ -42,6 +45,12 @@ def main() -> None:
         (multiclass / "tip_multiclass_dataset.csv", "tip_multiclass_dataset.csv"),
         (multiclass / "augmented", "augmented"),
         (multiclass / "tip_multiclass_augmented.csv", "tip_multiclass_augmented.csv"),
+    ])
+    pack("multi-strategies-dataset.zip", [
+        (multilabel / "images", "images"),
+        (multilabel / "marketing_multilabel_dataset.csv", "marketing_multilabel_dataset.csv"),
+        (multilabel / "augmented", "augmented"),
+        (multilabel / "marketing_multilabel_augmented.csv", "marketing_multilabel_augmented.csv"),
     ])
 
 

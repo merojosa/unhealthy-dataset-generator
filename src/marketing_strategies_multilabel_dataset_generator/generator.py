@@ -6,6 +6,11 @@ from typing import Optional, Union
 
 import pandas as pd
 
+try:
+    from .split import multilabel_group_split
+except ImportError:
+    from split import multilabel_group_split
+
 CSV_NAME = "marketing_multilabel_dataset.csv"
 IMAGES_DIR = "images"
 
@@ -33,7 +38,8 @@ def generate_dataset(
     - `output_dir`: dataset root to write; gets `images/` (copies of every labelled
       ad frame, wiped on each run) and `marketing_multilabel_dataset.csv`
     - `groups_csv`: binary `result/groups.csv`; its creative group is copied to the
-      `group` column so splits can keep each group in one split
+      `group` column, and whole groups are assigned to the `split` column
+      (train/val/test, label-stratified; see split.py)
 
     Source images are only copied, never moved. Returns 0 on success, non-zero on error.
     """
@@ -120,6 +126,12 @@ def generate_dataset(
         print(f"Warning: {ungrouped} frames are not in {groups_csv}; re-run group_frames.py.")
 
     df_multilabel = pd.DataFrame(multilabel_records, columns=["image_name", *cols_to_use, "group"])
+    if len(df_multilabel) and df_multilabel["group"].notna().all():
+        group_to_split = multilabel_group_split(df_multilabel, cols_to_use)
+        df_multilabel["split"] = df_multilabel["group"].map(group_to_split)
+    else:
+        print("Warning: some frames have no group; the 'split' column will be empty.")
+        df_multilabel["split"] = None
 
     try:
         if images_out.exists():
