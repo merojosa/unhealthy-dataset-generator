@@ -95,6 +95,15 @@ def generate_dataset(
 
     cols_to_use = all_meta_cols[start_idx : end_idx + 1]
 
+    # Coders only filled strategies for food-promoting ads (e.g. tip 6 "supermarket NOT
+    # promoting food" is always blank), so codes with every label blank are out of scope.
+    label_values = df_excel[cols_to_use].apply(
+        lambda c: pd.to_numeric(c.astype(str).str.strip(), errors="coerce")
+    )
+    unannotated_rows = label_values.isna().all(axis=1)
+    skipped_frames = 0
+    skipped_codes = set()
+
     for filename in all_files:
         match = cod_pattern.search(filename)
         if not match:
@@ -106,6 +115,11 @@ def generate_dataset(
         if matched_row.empty:
             continue
 
+        if unannotated_rows[matched_row.index[0]]:
+            skipped_frames += 1
+            skipped_codes.add(code)
+            continue
+
         record = {"image_name": filename}
         # include only selected metadata columns
         for col in cols_to_use:
@@ -114,6 +128,10 @@ def generate_dataset(
             record[col] = val
 
         multilabel_records.append(record)
+
+    if skipped_codes:
+        print(f"Skipped {skipped_frames} frames from {len(skipped_codes)} codes with no "
+              f"strategy annotations (non-food ads): {sorted(skipped_codes)}")
 
     if not multilabel_records:
         print("Warning: no matching records found; CSV will be empty.")

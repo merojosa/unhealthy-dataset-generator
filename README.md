@@ -152,6 +152,7 @@ python -m src.marketing_strategies_multilabel_dataset_generator.augment [multila
 
 Joins each ad frame's `cod` with `metadata.xlsx` (sheet `Base combinada`, or the first sheet). Output: `images/` (copies, wiped each run) and `marketing_multilabel_dataset.csv` (`image_name` + columns `rpr` through `rie` + `group` + `split`).
 
+- Frames whose metadata row has every `rpr`–`rie` cell blank are skipped. Coders only annotated food-promoting ads, so e.g. tip 6 (supermarket not promoting food) has no strategies.
 - `split`: whole groups assigned to train/val/test (70/15/15), balancing each label's positives across splits (`split.py`). Labels with fewer than 3 groups can't reach every split.
 - `augment` (optional, train only): runs only if the real train share is below `min_train_share`, then adds augmented copies until train is `target_train_share`. Sources are drawn favouring rare labels, at most `max_multiplier` uses each. Writes `augmented/` + `marketing_multilabel_augmented.csv` (main columns + `source_image`).
 - The checker fails on missing groups, groups in several splits, or a bad augmented set.
