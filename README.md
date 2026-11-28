@@ -55,7 +55,7 @@ flowchart LR
     REB --> ML[("Marketing multilabel dataset")]
 ```
 
-**Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad video). Split all datasets by `group` (both the multiclass and multilabel CSVs carry a `group` column).
+**Data leakage:** the same commercial airs many times, so near-identical frames could end up in both train and test. Grouping gives every frame a `group` (one per ad creative, one per non-ad channel). Split all datasets by `group` (both the multiclass and multilabel CSVs carry a `group` column).
 
 ## Usage
 
@@ -71,6 +71,7 @@ Run every command from the repo root. Each script reads `config.json` (falls bac
 | 5. Rebalance | `python src/rebalance_pipeline/rebalance.py` | Trims the over-represented class to `rebalance.target_ratio`. |
 | 6. Multiclass | `python -m src.tip_multiclass_dataset_generator.main` | Builds the tip multiclass dataset. |
 | 7. Multilabel | `python -m src.marketing_strategies_multilabel_dataset_generator.main` | Builds the marketing multilabel dataset. |
+| 8. Zip | `python src/misc/make_zips.py` | Packs `binary-dataset.zip` and `tip-multiclass-dataset.zip` (with the augmented train set if present) at the repo root. |
 
 Steps 2–7 are optional, but keep this order (e.g. multiclass needs `groups.csv` from step 4). Steps 2–5 move frames into subfolders of `result/` instead of deleting them. Steps 3–5 accept `--dry-run`.
 
@@ -125,9 +126,21 @@ python -m src.tip_multiclass_dataset_generator.check_dataset [multiclass_root]
 
 - Class = number before `=` in `tip` (`"2=..."` → `2`). Only `tip_values` are kept.
 - Class `0` = non-ad frames, sized `multiclass.non_ad_ratio` × the largest ad class. `--non-ad-ratio 0` disables it.
-- Output: `images/` (copies, wiped each run) and `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`, `group`).
+- Output: `images/` (copies, wiped each run) and `tip_multiclass_dataset.csv` (`image_name`, `tip`, `tip_label`, `group`, `split`).
 - `group` comes from `result/groups.csv`, so run the grouping step first.
-- The checker prints the class distribution and fails on missing groups.
+- `split` (`train`/`val`/`test`, 70/15/15 by whole groups) uses the same algorithm and seed as the training notebooks (`split.py`; keep both in sync).
+- The checker prints the class distribution per split and fails on missing groups, groups in several splits, or a bad augmented set.
+
+#### Train-only augmentation (optional)
+
+```
+python -m src.tip_multiclass_dataset_generator.augment [multiclass_root] [--dry-run] [--target-ratio N] [--max-multiplier N] [--seed N]
+```
+
+- Tops up each class in **train** to `target_ratio` × the largest train class, capped at `max_multiplier` × its original train frames. Val and test are never augmented.
+- Transforms: random crop (80–100% area), ±5° rotation, ±3% shift, brightness/contrast/saturation jitter, tiny hue shift, optional blur/noise, JPEG re-encode. No flips (logos and text).
+- Output: `augmented/` (wiped each run) and `tip_multiclass_augmented.csv` (main CSV columns + `source_image`). The main CSV and `images/` are untouched.
+- Training: split with the `split` column and append the augmented rows to train only.
 
 ### Marketing multilabel dataset
 
@@ -166,6 +179,7 @@ See `default_config.json`. The generator requires every key in it to exist in `c
 - `grouping`: `max_frames_per_creative` (`0` = no cap), `model` / `model_cache_dir` (DINOv2 model and its local cache), `centroid_threshold` (mean-embedding cosine that merges two creatives), `frame_threshold` + `frame_match_min_centroid` (merge when the best frame match and the mean-embedding cosine both clear these), `non_ad_group_by` (`channel` or `video`), `batch_size`.
 - `rebalance.target_ratio`: desired `non_ad : ad` ratio.
 - `multiclass.non_ad_ratio`: size of class `0` relative to the largest ad class.
+- `multiclass.augmentation`: `target_ratio` (train target per class relative to the largest train class), `max_multiplier` (cap per class vs its original train frames), `seed`.
 
 `metadata.xlsx` columns used: `cod` (row id), `tip` (ad type), `can` (channel), `fec` (date), `hin`/`hfi` (ad start/end), `nom` (ad name, for grouping), `rpr`–`rie` (multilabel labels). To test one video, filter the sheet to its `can` and `fec`.
 
@@ -182,6 +196,7 @@ See `default_config.json`. The generator requires every key in it to exist in `c
     excess/                    # rebalance (+ rebalance_manifest.csv)
 {path.multiclass_dataset}/
   images/  tip_multiclass_dataset.csv
+  augmented/  tip_multiclass_augmented.csv   # optional, train only
 {path.multilabel_dataset}/
   images/  marketing_multilabel_dataset.csv
 {path.videos}/

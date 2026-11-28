@@ -6,6 +6,11 @@ from typing import Optional, Union
 
 import pandas as pd
 
+try:
+    from .split import stratified_group_split
+except ImportError:
+    from split import stratified_group_split
+
 CSV_NAME = "tip_multiclass_dataset.csv"
 IMAGES_DIR = "images"
 
@@ -72,7 +77,8 @@ def generate_dataset(
     - `non_ad_images_dir` / `non_ad_ratio`: adds class `NON_AD_TIP` with
       `round(non_ad_ratio * largest ad class)` frames sampled evenly from this folder
     - `groups_csv`: binary `result/groups.csv`; its creative/video group is copied
-      to the `group` column so splits can keep each group in one split
+      to the `group` column, and whole groups are assigned to the `split` column
+      (train/val/test, same algorithm and seed as the training notebooks)
 
     Source images are only copied, never moved. Returns 0 on success, non-zero on error.
     """
@@ -154,6 +160,12 @@ def generate_dataset(
         print(f"Warning: {ungrouped} frames are not in {groups_csv}; re-run group_frames.py.")
 
     df_out = pd.DataFrame(records, columns=["image_name", "tip", "tip_label", "group"])
+    if len(df_out) and df_out["group"].notna().all():
+        group_to_split = stratified_group_split(df_out, label_col="tip")
+        df_out["split"] = df_out["group"].map(group_to_split)
+    else:
+        print("Warning: some frames have no group; the 'split' column will be empty.")
+        df_out["split"] = None
 
     try:
         if images_out.exists():

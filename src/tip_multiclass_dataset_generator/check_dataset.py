@@ -7,6 +7,39 @@ from pathlib import Path
 import pandas as pd
 
 CSV_NAME = "tip_multiclass_dataset.csv"
+AUG_CSV_NAME = "tip_multiclass_augmented.csv"
+AUG_DIR = "augmented"
+
+
+def check_augmented(root: Path, df: pd.DataFrame) -> int:
+    """Validate the optional train-only augmentation output; returns the number of problems."""
+    aug_csv = root / AUG_CSV_NAME
+    if not aug_csv.is_file():
+        print("No augmented train set (run augment.py to create one).")
+        return 0
+    aug = pd.read_csv(aug_csv)
+    aug_dir = root / AUG_DIR
+    disk = {f for f in os.listdir(aug_dir) if f.lower().endswith('.jpg')} if aug_dir.is_dir() else set()
+    names = set(aug['image_name'].astype(str))
+    source_split = df.set_index('image_name')['split'] if 'split' in df.columns else pd.Series(dtype=str)
+
+    problems = 0
+    checks = (
+        ("augmented rows missing on disk", sorted(names - disk)),
+        ("augmented images not in the augmented CSV", sorted(disk - names)),
+        ("augmented rows not in train", aug.loc[aug['split'] != 'train', 'image_name'].tolist()),
+        ("augmented rows whose source is not a train frame",
+         aug.loc[aug['source_image'].map(source_split) != 'train', 'image_name'].tolist()),
+        ("augmented names colliding with original images", sorted(names & set(df['image_name'].astype(str)))),
+    )
+    for label, items in checks:
+        if items:
+            print(f"Error: {len(items)} {label}, e.g. {items[:5]}")
+            problems += 1
+    print("Augmented train frames per class (tip: count):")
+    for tip, count in aug['tip'].value_counts().sort_index().items():
+        print(f"  {tip}: {count}")
+    return problems
 
 
 def check_dataset(csv_path: Path, images_dir: Path) -> int:
@@ -79,6 +112,20 @@ def check_dataset(csv_path: Path, images_dir: Path) -> int:
         if null_groups:
             print(f"Error: {null_groups} rows have an empty 'group'; run group_frames.py and regenerate.")
             problems += 1
+
+    if 'split' not in df.columns or df['split'].isna().any():
+        print("Error: 'split' column missing or incomplete; regenerate the dataset.")
+        problems += 1
+    elif 'group' in df.columns:
+        leaked = df.groupby('group')['split'].nunique()
+        leaked = leaked[leaked > 1]
+        if len(leaked):
+            print(f"Error: {len(leaked)} group(s) appear in more than one split: {', '.join(leaked.index[:10])}")
+            problems += 1
+        print("Frames per class and split:")
+        print(pd.crosstab(df['tip'], df['split']).reindex(columns=['train', 'val', 'test'], fill_value=0).to_string())
+
+    problems += check_augmented(csv_path.parent, df)
 
     if problems == 0:
         print("OK: multiclass dataset looks consistent.")
