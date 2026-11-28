@@ -148,11 +148,7 @@ def generate_dataset(
 
     groups = load_groups(Path(groups_csv) if groups_csv is not None else None)
     for record in records:
-        group = groups.get(record["image_name"])
-        if group is None and record["tip"] == NON_AD_TIP:
-            match = NON_AD_PATTERN.match(record["image_name"])
-            group = f"non_ad_{match.group(1)}" if match else None
-        record["group"] = group
+        record["group"] = groups.get(record["image_name"])
     ungrouped = sum(r["group"] is None for r in records)
     if groups and ungrouped:
         print(f"Warning: {ungrouped} frames are not in {groups_csv}; re-run group_frames.py.")

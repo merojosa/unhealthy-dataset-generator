@@ -8,3 +8,5 @@ __pycache__
 *.zip
 .review_progress.json
 *.csv
+models/
+group-review/

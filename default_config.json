@@ -23,7 +23,12 @@
   },
   "grouping": {
     "max_frames_per_creative": 50,
-    "merge_threshold": 0.945,
+    "model": "facebook/dinov2-base",
+    "model_cache_dir": "./models",
+    "centroid_threshold": 0.85,
+    "frame_threshold": 0.90,
+    "frame_match_min_centroid": 0.45,
+    "non_ad_group_by": "channel",
     "batch_size": 32
   },
   "tv_channels_mapping": {

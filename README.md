@@ -34,7 +34,7 @@ It also includes tools to review, de-duplicate, group (to prevent train/test lea
      pip install https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.10.0-tesseract-5.5.2/tesserocr-2.10.0-cp314-cp314-win_amd64.whl
      ```
    - GPU (optional, for CLIP in dedup/grouping): install the CUDA build of `torch` first, e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
-   - Dedup and grouping download the CLIP model (`clip-ViT-B-32`) on first run, so they need internet the first time.
+   - Dedup downloads the CLIP model (`clip-ViT-B-32`) and grouping downloads DINOv2 (`facebook/dinov2-base`, cached in `./models`, gitignored) on first run, so they need internet the first time.
 
 4. Copy `default_config.json` to `config.json` and set `path.videos`, `path.dataset` and one `videos_metadata` entry per video (see [Config](#config)).
 
@@ -99,11 +99,11 @@ Compares frames with CLIP + a perceptual hash and keeps one per similar group. W
 Gives every frame a `group` (see [Data leakage](#architecture)). Split with e.g. scikit-learn's `GroupShuffleSplit` or `StratifiedGroupKFold`.
 
 ```
-python src/grouping_pipeline/group_frames.py [result] [--dry-run] [--max-frames N] [--merge-threshold N] [--batch-size N]
+python src/grouping_pipeline/group_frames.py [result] [--dry-run] [--max-frames N] [--centroid-threshold N] [--frame-threshold N] [--non-ad-group-by {channel,video}] [--batch-size N]
 ```
 
-- Ad frames: grouped by the normalized metadata `nom`. Creatives with similar average CLIP embeddings are merged (catches typos and alternate cuts).
-- Non-ad frames: one group per source video.
+- Ad frames: grouped by the normalized metadata `nom`. Creatives that look alike under DINOv2 are merged (typos, alternate cuts, and spots of the same brand that reuse shots or templates).
+- Non-ad frames: one group per channel (or per source video with `--non-ad-group-by video`).
 - Ad groups above `max_frames_per_creative` are trimmed evenly; extras go to `result/capped/ad/`.
 
 Writes `result/groups.csv` (`image_name`, `label`, `group`, `creative`, `capped`). Safe to re-run.
@@ -163,7 +163,7 @@ See `default_config.json`. The generator requires every key in it to exist in `c
 - `tv_channels_mapping`: first digit of `can` → channel in the video name (`"1": "DN"` → `{date}_DN_processed.mp4`).
 - `videos_metadata.<file>`: `start_time` (`HH:MM:SS`, when the recording starts) and optional `crop` (`top`/`bottom`/`left`/`right` px).
 - `duplicate_images_removal`: `combined_threshold`, `clip_weight` (0–1, CLIP vs hash), `hash_size`, `batch_size`, `chunk_size`.
-- `grouping`: `max_frames_per_creative` (`0` = no cap), `merge_threshold` (CLIP similarity to merge creatives), `batch_size`.
+- `grouping`: `max_frames_per_creative` (`0` = no cap), `model` / `model_cache_dir` (DINOv2 model and its local cache), `centroid_threshold` (mean-embedding cosine that merges two creatives), `frame_threshold` + `frame_match_min_centroid` (merge when the best frame match and the mean-embedding cosine both clear these), `non_ad_group_by` (`channel` or `video`), `batch_size`.
 - `rebalance.target_ratio`: desired `non_ad : ad` ratio.
 - `multiclass.non_ad_ratio`: size of class `0` relative to the largest ad class.
 
